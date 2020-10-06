@@ -91,7 +91,7 @@ uint64_t timeComputedRange;
 byte data[LEN_DATA];
 // watchdog and reset period
 uint32_t lastActivity;
-uint32_t resetPeriod = 250;
+uint32_t resetPeriod = 100;
 // reply times (same on both sides for symm. ranging)
 uint16_t replyDelayTimeUS = 3000;
 // ranging counter (per second)
@@ -207,8 +207,16 @@ void receiver() {
     // so we don't need to restart the receiver manually
     DW1000Ng::startReceive();
 }
-
+uint32_t nowCnt = 0;
+uint32_t pastCnt = 0;
 void loop() {
+    nowCnt = millis();
+    if(nowCnt - pastCnt > 1000)
+    {
+      Serial.println("run");
+      pastCnt = nowCnt;
+    }
+    
     int32_t curMillis = millis();
     if (!sentAck && !receivedAck) {
         // check if inactive
@@ -235,6 +243,7 @@ void loop() {
         if (msgId != expectedMsgId) {
             // unexpected message, start over again (except if already POLL)
             protocolFailed = true;
+            Serial.println("protocolFaild");
         }
         if (msgId == POLL) {
             // on POLL we (re-)start, so no protocol failure
@@ -266,13 +275,19 @@ void loop() {
                 id[2] = data[18];
                 id[3] = data[19];         
                 String sid = "";
-                sid += id[0];
-                sid += id[1];
-                sid += id[2];
-                sid += id[3];
+                String sid0 = String(id[3], HEX);
+                String sid1 = String(id[2], HEX);
+                String sid2 = String(id[1], HEX);
+                String sid3 = String(id[0], HEX);
+                sid += sid0; sid += sid1; sid += sid2; sid += sid3;
+//          for(int i = 0; i < LEN_DATA; i++)
+//          {
+//            Serial.print(data[i]);Serial.print(" ");
+//          }
+//          Serial.println("");
                 
                 String rangeString = "Range: "; rangeString += distance; rangeString += " m";
-                rangeString += "\t RX power: "; rangeString += DW1000Ng::getReceivePower(); rangeString += " dBm";
+                //rangeString += "\t RX power: "; rangeString += DW1000Ng::getReceivePower(); rangeString += " dBm";
                 rangeString += "\t Sampling: "; rangeString += samplingRate; rangeString += " Hz";
                 rangeString += "\t ID: "; rangeString += sid;
                 Serial.println(rangeString);
@@ -290,6 +305,7 @@ void loop() {
             }
             else {
                 transmitRangeFailed();
+                Serial.println("transmitRangeFailed");
             }
 
             noteActivity();
