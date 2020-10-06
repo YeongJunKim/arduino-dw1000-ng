@@ -57,8 +57,8 @@
 #include <DW1000NgConstants.hpp>
 
 // connection pins
-const uint8_t PIN_RST = 9; // reset pin
-const uint8_t PIN_IRQ = 8; // irq pin
+const uint8_t PIN_RST = 7; // reset pin
+const uint8_t PIN_IRQ = 2; // irq pin
 const uint8_t PIN_SS = SS; // spi select pin
 
 // messages used in the ranging protocol
@@ -67,7 +67,12 @@ const uint8_t PIN_SS = SS; // spi select pin
 #define POLL_ACK 1
 #define RANGE 2
 #define RANGE_REPORT 3
+#define ID 4
 #define RANGE_FAILED 255
+
+#define NETWORK_ID    0x000A
+#define LOCAL_ADDRESS 0x1234
+
 // message flow state
 volatile byte expectedMsgId = POLL_ACK;
 // message sent/received state
@@ -78,11 +83,11 @@ uint64_t timePollSent;
 uint64_t timePollAckReceived;
 uint64_t timeRangeSent;
 // data buffer
-#define LEN_DATA 16
+#define LEN_DATA 20
 byte data[LEN_DATA];
 // watchdog and reset period
 uint32_t lastActivity;
-uint32_t resetPeriod = 250;
+uint32_t resetPeriod = 500;
 // reply times (same on both sides for symm. ranging)
 uint16_t replyDelayTimeUS = 3000;
 
@@ -93,7 +98,7 @@ device_configuration_t DEFAULT_CONFIG = {
     true,
     false,
     SFDMode::STANDARD_SFD,
-    Channel::CHANNEL_5,
+    Channel::CHANNEL_3,
     DataRate::RATE_850KBPS,
     PulseFrequency::FREQ_16MHZ,
     PreambleLength::LEN_256,
@@ -104,7 +109,7 @@ interrupt_configuration_t DEFAULT_INTERRUPT_CONFIG = {
     true,
     true,
     true,
-    false,
+    true,
     true
 };
 
@@ -117,9 +122,11 @@ void setup() {
     Serial.println("DW1000Ng initialized ...");
     // general configuration
     DW1000Ng::applyConfiguration(DEFAULT_CONFIG);
-	DW1000Ng::applyInterruptConfiguration(DEFAULT_INTERRUPT_CONFIG);
+	  DW1000Ng::applyInterruptConfiguration(DEFAULT_INTERRUPT_CONFIG);
 
-    DW1000Ng::setNetworkId(10);
+    DW1000Ng::setNetworkId(NETWORK_ID);
+    
+    DW1000Ng::setDeviceAddress(LOCAL_ADDRESS);
     
     DW1000Ng::setAntennaDelay(16436);
     
@@ -137,9 +144,11 @@ void setup() {
     // attach callback for (successfully) sent and received messages
     DW1000Ng::attachSentHandler(handleSent);
     DW1000Ng::attachReceivedHandler(handleReceived);
+    DW1000Ng::attachReceiveTimeoutHandler(handleTimeOut);
     // anchor starts by transmitting a POLL message
-    transmitPoll();
-    noteActivity();
+    //transmitPoll();
+    //noteActivity();
+    Serial.print("setup complete");
 }
 
 void noteActivity() {
@@ -165,10 +174,17 @@ void handleReceived() {
     receivedAck = true;
 }
 
+void handleTimeOut() {
+  Serial.println("handleTimeOut");
+}
+
 void transmitPoll() {
     data[0] = POLL;
     DW1000Ng::setTransmitData(data, LEN_DATA);
     DW1000Ng::startTransmit();
+    while(!DW1000Ng::isTransmitDone()){
+      
+    }
 }
 
 void transmitRange() {
@@ -186,12 +202,41 @@ void transmitRange() {
     DW1000NgUtils::writeValueToBytes(data + 1, timePollSent, LENGTH_TIMESTAMP);
     DW1000NgUtils::writeValueToBytes(data + 6, timePollAckReceived, LENGTH_TIMESTAMP);
     DW1000NgUtils::writeValueToBytes(data + 11, timeRangeSent, LENGTH_TIMESTAMP);
+    for(int i = 0; i < LEN_DATA; i++)
+    {
+      Serial.print(data[i]); Serial.print(" ");
+    }
+    Serial.println("");
+    data[16] = LOCAL_ADDRESS & 0x000F;
+    data[17] = (LOCAL_ADDRESS  >> 4)& 0x000F;
+    data[18] = (LOCAL_ADDRESS  >> 8)& 0x000F;
+    data[19] = (LOCAL_ADDRESS  >> 12)& 0x000F;
+    
     DW1000Ng::setTransmitData(data, LEN_DATA);
     DW1000Ng::startTransmit(TransmitMode::DELAYED);
     //Serial.print("Expect RANGE to be sent @ "); Serial.println(timeRangeSent.getAsFloat());
 }
 
+void transmitId() {
+  data[0] = ID;
+  data[1] = LOCAL_ADDRESS;
+  data[2] = LOCAL_ADDRESS >> 8;
+  data[3] = LOCAL_ADDRESS >> 16;
+  data[4] = LOCAL_ADDRESS >> 24; 
+  DW1000Ng::setTransmitData(data, LEN_DATA);
+  DW1000Ng::startTransmit(TransmitMode::DELAYED);
+}
+
+uint32_t cnt = 0;
+uint32_t pastcnt = 0;
 void loop() {
+    cnt = millis();
+    if(cnt - pastcnt > 1000)
+    {
+      Serial.println("running");
+      pastcnt = cnt;
+    }
+    
     if (!sentAck && !receivedAck) {
         // check if inactive
         if (millis() - lastActivity > resetPeriod) {
@@ -209,6 +254,7 @@ void loop() {
         // get message and parse
         DW1000Ng::getReceivedData(data, LEN_DATA);
         byte msgId = data[0];
+        
         if (msgId != expectedMsgId) {
             // unexpected message, start over again
             //Serial.print("Received wrong message # "); Serial.println(msgId);
@@ -232,6 +278,11 @@ void loop() {
             expectedMsgId = POLL_ACK;
             transmitPoll();
             noteActivity();
+        } else if (msgId == ID) {
+            expectedMsgId = POLL_ACK;
+            transmitPoll();
+            noteActivity();
+          
         }
     }
 }
