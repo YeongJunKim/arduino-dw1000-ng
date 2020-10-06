@@ -26,7 +26,7 @@ typedef struct Position {
 #if defined(ESP8266)
 const uint8_t PIN_SS = 15;
 #else
-const uint8_t PIN_RST = 9;
+const uint8_t PIN_RST = 7;
 const uint8_t PIN_SS = SS; // spi select pin
 #endif
 

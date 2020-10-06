@@ -58,7 +58,7 @@
 
 // connection pins
 const uint8_t PIN_RST = 9; // reset pin
-const uint8_t PIN_IRQ = 2; // irq pin
+const uint8_t PIN_IRQ = 8; // irq pin
 const uint8_t PIN_SS = SS; // spi select pin
 
 // messages used in the ranging protocol
