@@ -57,7 +57,7 @@
 #include <DW1000NgRanging.hpp>
 
 // connection pins
-const uint8_t PIN_RST = 9; // reset pin
+const uint8_t PIN_RST = 7; // reset pin
 const uint8_t PIN_IRQ = 2; // irq pin
 const uint8_t PIN_SS = SS; // spi select pin
 
@@ -67,6 +67,7 @@ const uint8_t PIN_SS = SS; // spi select pin
 #define POLL_ACK 1
 #define RANGE 2
 #define RANGE_REPORT 3
+#define ID 4
 #define RANGE_FAILED 255
 // message flow state
 volatile byte expectedMsgId = POLL;
@@ -86,7 +87,7 @@ uint64_t timeRangeReceived;
 uint64_t timeComputedRange;
 // last computed range/time
 // data buffer
-#define LEN_DATA 16
+#define LEN_DATA 20
 byte data[LEN_DATA];
 // watchdog and reset period
 uint32_t lastActivity;
@@ -105,7 +106,7 @@ device_configuration_t DEFAULT_CONFIG = {
     true,
     false,
     SFDMode::STANDARD_SFD,
-    Channel::CHANNEL_5,
+    Channel::CHANNEL_3,
     DataRate::RATE_850KBPS,
     PulseFrequency::FREQ_16MHZ,
     PreambleLength::LEN_256,
@@ -130,10 +131,11 @@ void setup() {
     Serial.println(F("DW1000Ng initialized ..."));
     // general configuration
     DW1000Ng::applyConfiguration(DEFAULT_CONFIG);
-	DW1000Ng::applyInterruptConfiguration(DEFAULT_INTERRUPT_CONFIG);
+  DW1000Ng::applyInterruptConfiguration(DEFAULT_INTERRUPT_CONFIG);
 
-    DW1000Ng::setDeviceAddress(1);
-	
+    DW1000Ng::setNetworkId(10);
+    DW1000Ng::setDeviceAddress(0x1112);
+  
     DW1000Ng::setAntennaDelay(16436);
     
     Serial.println(F("Committed configuration ..."));
@@ -258,10 +260,21 @@ void loop() {
                                                             timeRangeReceived);
                 /* Apply simple bias correction */
                 distance = DW1000NgRanging::correctRange(distance);
+                byte id[4] = {0,};
+                id[0] = data[16];
+                id[1] = data[17];
+                id[2] = data[18];
+                id[3] = data[19];         
+                String sid = "";
+                sid += id[0];
+                sid += id[1];
+                sid += id[2];
+                sid += id[3];
                 
                 String rangeString = "Range: "; rangeString += distance; rangeString += " m";
                 rangeString += "\t RX power: "; rangeString += DW1000Ng::getReceivePower(); rangeString += " dBm";
                 rangeString += "\t Sampling: "; rangeString += samplingRate; rangeString += " Hz";
+                rangeString += "\t ID: "; rangeString += sid;
                 Serial.println(rangeString);
                 //Serial.print("FP power is [dBm]: "); Serial.print(DW1000Ng::getFirstPathPower());
                 //Serial.print("RX power is [dBm]: "); Serial.println(DW1000Ng::getReceivePower());
@@ -283,4 +296,3 @@ void loop() {
         }
     }
 }
-
