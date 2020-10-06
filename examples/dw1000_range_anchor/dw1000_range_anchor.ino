@@ -70,7 +70,7 @@ interrupt_configuration_t DEFAULT_INTERRUPT_CONFIG = {
 
 void setup() {
     // DEBUG monitoring
-    Serial.begin(9600);
+    Serial.begin(115200);
     delay(1000);
     Serial.println(F("### DW1000Ng-arduino-ranging-anchor ###"));
     // initialize the driver
@@ -168,7 +168,7 @@ void loop() {
     DW1000Ng::getReceivedData(data_rx, LEN_DATA);
     DW1000Ng::clearReceiveStatus();
     msgId = data_rx[0];
-    //Serial.println(msgId);
+    Serial.println(msgId);
     if(data_tx[0]==POLL_ACK){
       Serial.print("Time Poll Ack Sent"); Serial.print(", ");
       timePollAckSent = DW1000Ng::getTransmitTimestamp();
@@ -197,6 +197,7 @@ void loop() {
       String rangeString = "Range: "; rangeString += distance; rangeString += " m";
       rangeString += "\t RX power: "; rangeString += DW1000Ng::getReceivePower(); rangeString += " dBm";
       rangeString += "\t Sampling: "; rangeString += samplingRate; rangeString += " Hz";
+      
       Serial.println(rangeString);
       //Serial.print("FP power is [dBm]: "); Serial.print(DW1000Ng::getFirstPathPower());
       //Serial.print("RX power is [dBm]: "); Serial.println(DW1000Ng::getReceivePower());
@@ -209,6 +210,13 @@ void loop() {
              rangingCountPeriod = curMillis;
              successRangingCount = 0;
       }
+    }
+    else if(msgId==RANGE_REPORT)
+    {
+      float curRange;
+      memcpy(&curRange, data_rx + 1, 4);
+      Serial.print("range Report: ");
+      Serial.println(curRange);
     }
     else
       transmitRangeFailed();
