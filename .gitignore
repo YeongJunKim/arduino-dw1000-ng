@@ -1,3 +1,6 @@
+
+/build
+
 # exclude latex doxygen folder
 extras/doc/latex
 # exclude datasheets
@@ -9,4 +12,3 @@ CMakeLists.txt
 cmake-build-debug
 #exclude OSX stuff
 .DS_STORE
-.vscode
