@@ -269,6 +269,10 @@ void loop() {
                                                             timeRangeReceived);
                 /* Apply simple bias correction */
                 distance = DW1000NgRanging::correctRange(distance);
+                if(distance < 0.000001)
+                {
+                  distance = 0;
+                }
                 byte id[4] = {0,};
                 id[0] = data[16];
                 id[1] = data[17];
@@ -288,8 +292,9 @@ void loop() {
                 
                 String rangeString = "Range: "; rangeString += distance; rangeString += " m";
                 //rangeString += "\t RX power: "; rangeString += DW1000Ng::getReceivePower(); rangeString += " dBm";
-                rangeString += "\t Sampling: "; rangeString += samplingRate; rangeString += " Hz";
-                rangeString += "\t ID: "; rangeString += sid;
+//                rangeString += "\t Sampling: "; rangeString += samplingRate; rangeString += " Hz";
+                rangeString += samplingRate;
+//                rangeString += "\t ID: "; rangeString += sid;
                 Serial.println(rangeString);
                 //Serial.print("FP power is [dBm]: "); Serial.print(DW1000Ng::getFirstPathPower());
                 //Serial.print("RX power is [dBm]: "); Serial.println(DW1000Ng::getReceivePower());
