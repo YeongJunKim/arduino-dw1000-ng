@@ -1,0 +1,7 @@
+{
+    "programmer": "AVRISP mkII",
+    "board": "arduino:avr:uno",
+    "port": "COM25",
+    "sketch": "examples\\DistributedMultiConnection\\DistributedMultiConnection.ino",
+    "output": "../build"
+}
