@@ -71,7 +71,7 @@ const uint8_t PIN_SS = SS; // spi select pin
 #define RANGE_FAILED 255
 
 #define NETWORK_ID    0x000A
-#define LOCAL_ADDRESS 0x1234
+#define LOCAL_ADDRESS 0xccca
 
 // message flow state
 volatile byte expectedMsgId = POLL_ACK;
@@ -87,7 +87,7 @@ uint64_t timeRangeSent;
 byte data[LEN_DATA];
 // watchdog and reset period
 uint32_t lastActivity;
-uint32_t resetPeriod = 500;
+uint32_t resetPeriod = 200;
 // reply times (same on both sides for symm. ranging)
 uint16_t replyDelayTimeUS = 3000;
 
@@ -182,8 +182,11 @@ void transmitPoll() {
     data[0] = POLL;
     DW1000Ng::setTransmitData(data, LEN_DATA);
     DW1000Ng::startTransmit();
+    int ct = 0;
     while(!DW1000Ng::isTransmitDone()){
-      
+      ct++;
+      if(ct > 100)
+        break;
     }
 }
 
@@ -202,29 +205,17 @@ void transmitRange() {
     DW1000NgUtils::writeValueToBytes(data + 1, timePollSent, LENGTH_TIMESTAMP);
     DW1000NgUtils::writeValueToBytes(data + 6, timePollAckReceived, LENGTH_TIMESTAMP);
     DW1000NgUtils::writeValueToBytes(data + 11, timeRangeSent, LENGTH_TIMESTAMP);
-    for(int i = 0; i < LEN_DATA; i++)
-    {
-      Serial.print(data[i]); Serial.print(" ");
-    }
-    Serial.println("");
-    data[16] = LOCAL_ADDRESS & 0x000F;
-    data[17] = (LOCAL_ADDRESS  >> 4)& 0x000F;
-    data[18] = (LOCAL_ADDRESS  >> 8)& 0x000F;
-    data[19] = (LOCAL_ADDRESS  >> 12)& 0x000F;
+//    for(int i = 0; i < LEN_DATA; i++)
+//    {
+//      Serial.print(data[i]); Serial.print(" ");
+//    }
+//    Serial.println("");
+    data[16] = LOCAL_ADDRESS & 0xFF;
+    data[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
     
     DW1000Ng::setTransmitData(data, LEN_DATA);
     DW1000Ng::startTransmit(TransmitMode::DELAYED);
     //Serial.print("Expect RANGE to be sent @ "); Serial.println(timeRangeSent.getAsFloat());
-}
-
-void transmitId() {
-  data[0] = ID;
-  data[1] = LOCAL_ADDRESS;
-  data[2] = LOCAL_ADDRESS >> 8;
-  data[3] = LOCAL_ADDRESS >> 16;
-  data[4] = LOCAL_ADDRESS >> 24; 
-  DW1000Ng::setTransmitData(data, LEN_DATA);
-  DW1000Ng::startTransmit(TransmitMode::DELAYED);
 }
 
 uint32_t cnt = 0;
@@ -241,6 +232,7 @@ void loop() {
         // check if inactive
         if (millis() - lastActivity > resetPeriod) {
             resetInactive();
+            Serial.println("!sentAck !receivedAck");
         }
         return;
     }
@@ -257,7 +249,7 @@ void loop() {
         
         if (msgId != expectedMsgId) {
             // unexpected message, start over again
-            //Serial.print("Received wrong message # "); Serial.println(msgId);
+            Serial.print("Received wrong message # "); Serial.println(msgId);
             expectedMsgId = POLL_ACK;
             transmitPoll();
             return;
