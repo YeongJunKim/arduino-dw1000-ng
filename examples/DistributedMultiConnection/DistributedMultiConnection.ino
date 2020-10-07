@@ -11,8 +11,10 @@ const uint8_t PIN_SS = SS; // spi select pin
 // TODO replace by enum
 #define POLL 0
 #define POLL_ACK 1
+#define POLL_ACK_LEN 5
 #define RANGE 2
 #define RANGE_REPORT 3
+#define BROADCASTING 4
 
 #define RANGE_FAILED 255
 
@@ -22,29 +24,34 @@ const uint8_t PIN_SS = SS; // spi select pin
 
 /*
 **MESSAGE PACKET**
-| bits |<-                       for calculating distance           ->|   IDENTIFIER  |
-|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |  16 17 18 19  | 20 21 | 22 23 | 24 25 26 27 |
-| TYPE |  timePollSent |  timePollAckReceived |     timeRangeSent     | LOCAL_ADDRESS | X_POS | Y_POS | 
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  |  local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |  20 21 |  22 23  |
+| TYPE |  timePollSent |  timePollAckReceived |     timeRangeSent     | LOCAL_ADDRESS |  X_POS |  Y_POS  | 
 
 POLL MESSAGE 
-| bits |   IDENTIFIER  |
-|  0   |    1 2 3 4    |
-|  0   | LOCAL_ADDRESS |
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  |  local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |  20 21 |  22 23  |
+| TYPE |               |                      |                       | LOCAL_ADDRESS |        |         | 
 
-POLL_ACK MESSAGE
-| bits |   IDENTIFIER  |
-|  0   |    1 2 3 4    |
-|  1   | LOCAL_ADDRESS |
+POLL_ACK MESSAGE 
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  |  local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |  20 21 |  22 23  |
+|  1   |               |                      |                       | LOCAL_ADDRESS |        |         | 
 
-RANGE MESSAGE
-| bits |<-                       for calculating distance           ->|   IDENTIFIER  |
-|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |  16 17 18 19  | 
-|  2   |  timePollSent |  timePollAckReceived |     timeRangeSent     | LOCAL_ADDRESS |
+RANGE MESSAGE 
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  |  local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |  20 21 |  22 23  | 
+|  2   |  timePollSent |  timePollAckReceived |     timeRangeSent     | LOCAL_ADDRESS |        |         | 
 
-RANGE_REPORT MESSAGE
-| bits |   distance   |   IDENTIFIER  |
+RANGE_REPORT MESSAGE 
+| bits |   distance    |   IDENTIFIER  |
 |  0   |   1 2 3 4 5   |   6  7  8  9  | 
-|  2   |  timePollSent | LOCAL_ADDRESS |
+|  3   |  timePollSent | LOCAL_ADDRESS |
+
+BROADCASTING MESSAGE 
+| bits |  local position  |   IDENTIFIER  |
+|  0   |   1 2   |   3 4  |   6  7  8  9  |   
+|  4   |  X_POS  |  Y_POS | LOCAL_ADDRESS |
 
 
 TYPE:
@@ -52,19 +59,20 @@ TYPE:
 1 : POLL_ACK
 2 : RANGE
 3 : RANGE_REPORT
-4 : 
+4 : BROADCASTING
 
 If LOCAL_ADDRESS == 0xFFFF -> broadcast
 
-
 */
 
-// message flow state
+
+
+#define LEN_DATA 20
 volatile byte expectedMsgId = POLL;
 volatile boolean sentAck = false;
 volatile boolean receivedAck = false;
 boolean protocolFailed = false;
-// timestamps to remember
+
 uint64_t timePollSent;
 uint64_t timePollReceived;
 uint64_t timePollAckSent;
@@ -72,19 +80,48 @@ uint64_t timePollAckReceived;
 uint64_t timeRangeSent;
 uint64_t timeRangeReceived;
 uint64_t timeComputedRange;
-// last computed range/time
-// data buffer
-#define LEN_DATA 20
+
 byte data[LEN_DATA];
-// watchdog and reset period
+
 uint32_t lastActivity;
 uint32_t resetPeriod = 100;
-// reply times (same on both sides for symm. ranging)
+
 uint16_t replyDelayTimeUS = 3000;
-// ranging counter (per second)
+
 uint16_t successRangingCount = 0;
 uint32_t rangingCountPeriod = 0;
 float samplingRate = 0;
+
+typedef struct _dev
+{
+    uint16_t id = 0x0000;
+    volatile byte expectedMsgId = POLL;
+    volatile boolean sentAck = false;
+    volatile boolean receivedAck = false;
+    boolean protocolFailed = false;
+
+    uint64_t timePollSent;
+    uint64_t timePollReceived;
+    uint64_t timePollAckSent;
+    uint64_t timePollAckReceived;
+    uint64_t timeRangeSent;
+    uint64_t timeRangeReceived;
+    uint64_t timeComputedRange;
+
+    byte data[LEN_DATA];
+
+    uint32_t lastActivity;
+    uint32_t resetPeriod = 100;
+
+    uint16_t replyDelayTimeUS = 3000;
+
+    uint16_t successRangingCount = 0;
+    uint32_t rangingCountPeriod = 0;
+    float samplingRate = 0;
+}t_dev;
+
+
+
 
 device_configuration_t DEFAULT_CONFIG = {
     false,
@@ -108,7 +145,12 @@ interrupt_configuration_t DEFAULT_INTERRUPT_CONFIG = {
     true
 };
 
+t_dev t_d[2]; 
+
 void setup() {
+    
+    t_d[0].id = 0xCCCA;
+    t_d[1].id = 0xCCCB;
     // DEBUG monitoring
     Serial.begin(115200);
     delay(1000);
@@ -161,18 +203,30 @@ void resetInactive() {
 
 void handleSent() {
     // status change on sent success
+    Serial.println("handleSent");
     sentAck = true;
 }
 
 void handleReceived() {
     // status change on received success
+    DW1000Ng::getReceivedData(data, LEN_DATA);
+    if(data[16] == 0xCA)
+    {
+        t_d[0].receivedAck = true;
+    }
+    else if(data[17] == 0xCB)
+    {
+        t_d[1].receivedAck = true;
+    }
     receivedAck = true;
 }
 
 void transmitPollAck() {
     data[0] = POLL_ACK;
+    
     DW1000Ng::setTransmitData(data, LEN_DATA);
     DW1000Ng::startTransmit();
+    Serial.println("trpollack");
 }
 
 void transmitRangeReport(float curRange) {
@@ -181,6 +235,7 @@ void transmitRangeReport(float curRange) {
     memcpy(data + 1, &curRange, 4);
     DW1000Ng::setTransmitData(data, LEN_DATA);
     DW1000Ng::startTransmit();
+    Serial.println("trrngreport");
 }
 
 void transmitRangeFailed() {
@@ -197,11 +252,19 @@ void receiver() {
 uint32_t nowCnt = 0;
 uint32_t pastCnt = 0;
 void loop() {
+
     nowCnt = millis();
     if(nowCnt - pastCnt > 1000)
     {
-      Serial.println("run");
-      pastCnt = nowCnt;
+        // insertFirst(1,10);
+        // insertFirst(4,20);
+        // insertFirst(3,50);
+        // printList();
+        // struct node *temp = deleteFirst();
+        // temp = deleteFirst();
+        // temp = deleteFirst();
+        Serial.println("run");
+        pastCnt = nowCnt;
     }
     
     int32_t curMillis = millis();
@@ -217,6 +280,14 @@ void loop() {
         sentAck = false;
         byte msgId = data[0];
         if (msgId == POLL_ACK) {
+            if (data[16] = 0xCA)
+            {
+                t_d[0].timePollAckSent = DW1000Ng::getTransmitTimestamp();
+            }
+            else if (data[16] = 0xCB)
+            {
+                t_d[1].timePollAckSent = DW1000Ng::getTransmitTimestamp();
+            }
             timePollAckSent = DW1000Ng::getTransmitTimestamp();
             noteActivity();
         }
@@ -278,11 +349,12 @@ void loop() {
 //          Serial.println("");
                 
                 String rangeString = "Range: "; rangeString += distance; rangeString += " m";
-                //rangeString += "\t RX power: "; rangeString += DW1000Ng::getReceivePower(); rangeString += " dBm";
-//                rangeString += "\t Sampling: "; rangeString += samplingRate; rangeString += " Hz";
+                // rangeString += "\t RX power: "; rangeString += DW1000Ng::getReceivePower(); rangeString += " dBm";
+            //    rangeString += "\t Sampling: "; rangeString += samplingRate; rangeString += " Hz";
                 rangeString += samplingRate;
-//                rangeString += "\t ID: "; rangeString += sid;
+            //    rangeString += "\t ID: "; rangeString += sid;
                 Serial.println(rangeString);
+                // Serial.println(distance);
                 //Serial.print("FP power is [dBm]: "); Serial.print(DW1000Ng::getFirstPathPower());
                 //Serial.print("RX power is [dBm]: "); Serial.println(DW1000Ng::getReceivePower());
                 //Serial.print("Receive quality: "); Serial.println(DW1000Ng::getReceiveQuality());
