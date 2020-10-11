@@ -1,11 +1,16 @@
 #include <DW1000Ng.hpp>
 #include <DW1000NgUtils.hpp>
 #include <DW1000NgRanging.hpp>
+#include <queue.hpp>
 
 // connection pins
-const uint8_t PIN_RST = 7; // reset pin
-const uint8_t PIN_IRQ = 2; // irq pin
-const uint8_t PIN_SS = SS; // spi select pin
+const uint8_t PIN_RST   = 7;  // reset pin
+const uint8_t PIN_IRQ   = 2;  // irq pin
+const uint8_t PIN_SS    = SS; // spi select pin
+
+const uint8_t PIN_SS_TAG    = 6;
+const uint8_t PIN_IRQ_TAG   = 3;
+const uint8_t PIN_RST_TAG       = 5;
 
 // messages used in the ranging protocol
 // TODO replace by enum
@@ -20,38 +25,38 @@ const uint8_t PIN_SS = SS; // spi select pin
 
 
 #define NETWORK_ID    0x000A
-#define LOCAL_ADDRESS 0xAAA1
+#define LOCAL_ADDRESS 0xCCCC
 
 /*
 **MESSAGE PACKET**
-| bits |<-                       for calculating distance           ->|   IDENTIFIER  |  local position  |
-|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |  20 21 |  22 23  |
-| TYPE |  timePollSent |  timePollAckReceived |     timeRangeSent     | LOCAL_ADDRESS |  X_POS |  Y_POS  | 
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  | sender IDENTIFIER |    local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |        18 19      |  20 21  |   22 23  |
+| TYPE |  timePollSent |  timePollAckReceived |     timeRangeSent     | LOCAL_ADDRESS |    LOCAL_ADDRESS  |  X_POS  |   Y_POS  | 
 
 POLL MESSAGE 
-| bits |<-                       for calculating distance           ->|   IDENTIFIER  |  local position  |
-|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |  20 21 |  22 23  |
-| TYPE |               |                      |                       | LOCAL_ADDRESS |        |         | 
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  | sender IDENTIFIER |    local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |        18 19      |  20 21  |   22 23  |
+| TYPE |               |                      |                       | LOCAL_ADDRESS |    LOCAL_ADDRESS  |  X_POS  |   Y_POS  | 
 
 POLL_ACK MESSAGE 
-| bits |<-                       for calculating distance           ->|   IDENTIFIER  |  local position  |
-|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |  20 21 |  22 23  |
-|  1   |               |                      |                       | LOCAL_ADDRESS |        |         | 
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  | sender IDENTIFIER |    local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |        18 19      |  20 21  |   22 23  |
+|  1   |               |                      |                       | LOCAL_ADDRESS |    LOCAL_ADDRESS  |  X_POS  |   Y_POS  | 
 
 RANGE MESSAGE 
-| bits |<-                       for calculating distance           ->|   IDENTIFIER  |  local position  |
-|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |  20 21 |  22 23  | 
-|  2   |  timePollSent |  timePollAckReceived |     timeRangeSent     | LOCAL_ADDRESS |        |         | 
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  | sender IDENTIFIER |    local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |        18 19      |  20 21  |   22 23  |
+|  2   |  timePollSent |  timePollAckReceived |     timeRangeSent     | LOCAL_ADDRESS |    LOCAL_ADDRESS  |  X_POS  |   Y_POS  |
 
 RANGE_REPORT MESSAGE 
-| bits |   distance    |   IDENTIFIER  |
-|  0   |   1 2 3 4 5   |   6  7  8  9  | 
-|  3   |  timePollSent | LOCAL_ADDRESS |
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  | sender IDENTIFIER |    local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |        18 19      |  20 21  |   22 23  |
+|  2   |   distance    |                      |                       |               |                   |         |          |
 
 BROADCASTING MESSAGE 
-| bits |  local position  |   IDENTIFIER  |
-|  0   |   1 2   |   3 4  |   6  7  8  9  |   
-|  4   |  X_POS  |  Y_POS | LOCAL_ADDRESS |
+| bits |<-                       for calculating distance           ->|   IDENTIFIER  | sender IDENTIFIER |    local position  |
+|  0   |   1 2 3 4 5   |      6 7 8 9 10      |     11 12 13 14 15    |     16 17     |        18 19      |  20 21  |   22 23  |
+|  2   |               |                      |                       | LOCAL_ADDRESS |    LOCAL_ADDRESS  |  X_POS  |   Y_POS  |
 
 
 TYPE:
@@ -67,27 +72,16 @@ If LOCAL_ADDRESS == 0xFFFF -> broadcast
 
 
 
-#define LEN_DATA 20
-volatile byte expectedMsgId = POLL;
-volatile boolean sentAck = false;
-volatile boolean receivedAck = false;
-boolean protocolFailed = false;
 
-uint64_t timePollSent;
-uint64_t timePollReceived;
-uint64_t timePollAckSent;
-uint64_t timePollAckReceived;
-uint64_t timeRangeSent;
-uint64_t timeRangeReceived;
-uint64_t timeComputedRange;
 
 byte data[LEN_DATA];
 
+Queue sendQueue;
+
+
 uint32_t lastActivity;
 uint32_t resetPeriod = 100;
-
 uint16_t replyDelayTimeUS = 3000;
-
 uint16_t successRangingCount = 0;
 uint32_t rangingCountPeriod = 0;
 float samplingRate = 0;
@@ -183,72 +177,16 @@ void setup() {
     DW1000Ng::attachReceivedHandler(handleReceived);
     // anchor starts in receiving mode, awaiting a ranging poll message
    
+
+   
+
     receiver();
     noteActivity();
     // for first time ranging frequency computation
     rangingCountPeriod = millis();
 }
 
-void noteActivity() {
-    // update activity timestamp, so that we do not reach "resetPeriod"
-    lastActivity = millis();
-}
 
-void resetInactive() {
-    // anchor listens for POLL
-    expectedMsgId = POLL;
-    receiver();
-    noteActivity();
-}
-
-void handleSent() {
-    // status change on sent success
-    Serial.println("handleSent");
-    sentAck = true;
-}
-
-void handleReceived() {
-    // status change on received success
-    DW1000Ng::getReceivedData(data, LEN_DATA);
-    if(data[16] == 0xCA)
-    {
-        t_d[0].receivedAck = true;
-    }
-    else if(data[17] == 0xCB)
-    {
-        t_d[1].receivedAck = true;
-    }
-    receivedAck = true;
-}
-
-void transmitPollAck() {
-    data[0] = POLL_ACK;
-    
-    DW1000Ng::setTransmitData(data, LEN_DATA);
-    DW1000Ng::startTransmit();
-    Serial.println("trpollack");
-}
-
-void transmitRangeReport(float curRange) {
-    data[0] = RANGE_REPORT;
-    // write final ranging result
-    memcpy(data + 1, &curRange, 4);
-    DW1000Ng::setTransmitData(data, LEN_DATA);
-    DW1000Ng::startTransmit();
-    Serial.println("trrngreport");
-}
-
-void transmitRangeFailed() {
-    data[0] = RANGE_FAILED;
-    DW1000Ng::setTransmitData(data, LEN_DATA);
-    DW1000Ng::startTransmit();
-}
-
-void receiver() {
-    DW1000Ng::forceTRxOff();
-    // so we don't need to restart the receiver manually
-    DW1000Ng::startReceive();
-}
 uint32_t nowCnt = 0;
 uint32_t pastCnt = 0;
 void loop() {
@@ -256,19 +194,12 @@ void loop() {
     nowCnt = millis();
     if(nowCnt - pastCnt > 1000)
     {
-        // insertFirst(1,10);
-        // insertFirst(4,20);
-        // insertFirst(3,50);
-        // printList();
-        // struct node *temp = deleteFirst();
-        // temp = deleteFirst();
-        // temp = deleteFirst();
         Serial.println("run");
         pastCnt = nowCnt;
     }
     
     int32_t curMillis = millis();
-    if (!sentAck && !receivedAck) {
+    if (!t_d[0].sentAck && !t_d[0].receivedAck) {
         // check if inactive
         if (curMillis - lastActivity > resetPeriod) {
             resetInactive();
@@ -276,8 +207,8 @@ void loop() {
         return;
     }
     // continue on any success confirmation
-    if (sentAck) {
-        sentAck = false;
+    if (t_d[0].sentAck) {
+        t_d[0].sentAck = false;
         byte msgId = data[0];
         if (msgId == POLL_ACK) {
             if (data[16] = 0xCA)
@@ -288,71 +219,62 @@ void loop() {
             {
                 t_d[1].timePollAckSent = DW1000Ng::getTransmitTimestamp();
             }
-            timePollAckSent = DW1000Ng::getTransmitTimestamp();
             noteActivity();
         }
         DW1000Ng::startReceive();
     }
-    if (receivedAck) {
-        receivedAck = false;
+    if (t_d[0].receivedAck) {
+        t_d[0].receivedAck = false;
         // get message and parse
         DW1000Ng::getReceivedData(data, LEN_DATA);
+        
         byte msgId = data[0];
-        if (msgId != expectedMsgId) {
+        if (msgId != t_d[0].expectedMsgId) {
             // unexpected message, start over again (except if already POLL)
-            protocolFailed = true;
+            t_d[0].protocolFailed = true;
             Serial.println("protocolFaild");
         }
         if (msgId == POLL) {
             // on POLL we (re-)start, so no protocol failure
-            protocolFailed = false;
-            timePollReceived = DW1000Ng::getReceiveTimestamp();
-            expectedMsgId = RANGE;
+            t_d[0].protocolFailed = false;
+            t_d[0].timePollReceived = DW1000Ng::getReceiveTimestamp();
+            t_d[0].expectedMsgId = RANGE;
             transmitPollAck();
             noteActivity();
         }
         else if (msgId == RANGE) {
-            timeRangeReceived = DW1000Ng::getReceiveTimestamp();
-            expectedMsgId = POLL;
-            if (!protocolFailed) {
-                timePollSent = DW1000NgUtils::bytesAsValue(data + 1, LENGTH_TIMESTAMP);
-                timePollAckReceived = DW1000NgUtils::bytesAsValue(data + 6, LENGTH_TIMESTAMP);
-                timeRangeSent = DW1000NgUtils::bytesAsValue(data + 11, LENGTH_TIMESTAMP);
+            t_d[0].timeRangeReceived = DW1000Ng::getReceiveTimestamp();
+            t_d[0].expectedMsgId = POLL;
+            if (!t_d[0].protocolFailed) {
+                t_d[0].timePollSent = DW1000NgUtils::bytesAsValue(data + 1, LENGTH_TIMESTAMP);
+                t_d[0].timePollAckReceived = DW1000NgUtils::bytesAsValue(data + 6, LENGTH_TIMESTAMP);
+                t_d[0].timeRangeSent = DW1000NgUtils::bytesAsValue(data + 11, LENGTH_TIMESTAMP);
                 // (re-)compute range as two-way ranging is done
-                double distance = DW1000NgRanging::computeRangeAsymmetric(timePollSent,
-                                                            timePollReceived, 
-                                                            timePollAckSent, 
-                                                            timePollAckReceived, 
-                                                            timeRangeSent, 
-                                                            timeRangeReceived);
+                double distance = DW1000NgRanging::computeRangeAsymmetric(t_d[0].timePollSent,
+                                                            t_d[0].timePollReceived, 
+                                                            t_d[0].timePollAckSent, 
+                                                            t_d[0].timePollAckReceived, 
+                                                            t_d[0].timeRangeSent, 
+                                                            t_d[0].timeRangeReceived);
                 /* Apply simple bias correction */
                 distance = DW1000NgRanging::correctRange(distance);
                 if(distance < 0.000001)
                 {
                   distance = 0;
                 }
-                byte id[4] = {0,};
+                byte id[2] = {0,};
                 id[0] = data[16];
-                id[1] = data[17];
-                id[2] = data[18];
-                id[3] = data[19];         
+                id[1] = data[17];    
                 String sid = "";
-                String sid0 = String(id[3], HEX);
-                String sid1 = String(id[2], HEX);
-                String sid2 = String(id[1], HEX);
-                String sid3 = String(id[0], HEX);
-                sid += sid0; sid += sid1; sid += sid2; sid += sid3;
-//          for(int i = 0; i < LEN_DATA; i++)
-//          {
-//            Serial.print(data[i]);Serial.print(" ");
-//          }
-//          Serial.println("");
+                String sid0 = String(id[1], HEX);
+                String sid1 = String(id[0], HEX);
+                sid += sid0; sid += sid1;
                 
                 String rangeString = "Range: "; rangeString += distance; rangeString += " m";
                 // rangeString += "\t RX power: "; rangeString += DW1000Ng::getReceivePower(); rangeString += " dBm";
             //    rangeString += "\t Sampling: "; rangeString += samplingRate; rangeString += " Hz";
-                rangeString += samplingRate;
-            //    rangeString += "\t ID: "; rangeString += sid;
+                // rangeString += samplingRate;
+               rangeString += "\t ID: "; rangeString += sid;
                 Serial.println(rangeString);
                 // Serial.println(distance);
                 //Serial.print("FP power is [dBm]: "); Serial.print(DW1000Ng::getFirstPathPower());
@@ -360,10 +282,10 @@ void loop() {
                 //Serial.print("Receive quality: "); Serial.println(DW1000Ng::getReceiveQuality());
                 // update sampling rate (each second)
                 transmitRangeReport(distance * DISTANCE_OF_RADIO_INV);
-                successRangingCount++;
+                t_d[0].successRangingCount++;
                 if (curMillis - rangingCountPeriod > 1000) {
                     samplingRate = (1000.0f * successRangingCount) / (curMillis - rangingCountPeriod);
-                    rangingCountPeriod = curMillis;
+                    t_d[0].rangingCountPeriod = curMillis;
                     successRangingCount = 0;
                 }
             }
@@ -375,4 +297,67 @@ void loop() {
             noteActivity();
         }
     }
+}
+
+void noteActivity() {
+    // update activity timestamp, so that we do not reach "resetPeriod"
+    lastActivity = millis();
+}
+
+void resetInactive() {
+    // anchor listens for POLL
+    t_d[0].expectedMsgId = POLL;
+    receiver();
+    noteActivity();
+}
+
+void handleSent() {
+    // status change on sent success
+    // Serial.println("handleSent");
+    t_d[0].sentAck = true;
+}
+
+void handleReceived() {
+    // status change on received success
+    
+    t_d[0].receivedAck = true;
+    // Serial.println("handleReceived");
+}
+
+void transmitPollAck() {
+    data[0] = POLL_ACK;
+    data[16] = LOCAL_ADDRESS & 0xFF;
+    data[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
+    DW1000Ng::setTransmitData(data, LEN_DATA);
+    DW1000Ng::startTransmit();
+    // Serial.println("trpollack");
+}
+
+void transmitRangeReport(float curRange) {
+    data[0] = RANGE_REPORT;
+    // write final ranging result
+    memcpy(data + 1, &curRange, 4);
+    data[16] = LOCAL_ADDRESS & 0xFF;
+    data[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
+    DW1000Ng::setTransmitData(data, LEN_DATA);
+    DW1000Ng::startTransmit();
+    // Serial.println("trrngreport");
+}
+
+void transmitRangeFailed() {
+    data[0] = RANGE_FAILED;
+    data[16] = LOCAL_ADDRESS & 0xFF;
+    data[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
+    DW1000Ng::setTransmitData(data, LEN_DATA);
+    DW1000Ng::startTransmit();
+}
+
+void receiver() {
+    DW1000Ng::forceTRxOff();
+    // so we don't need to restart the receiver manually
+    DW1000Ng::startReceive();
+}
+
+void send_frame() {
+    
 }

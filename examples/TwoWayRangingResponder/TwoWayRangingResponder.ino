@@ -118,19 +118,11 @@ void setup() {
     Serial.println(F("DW1000Ng initialized ..."));
     // general configuration
     DW1000Ng::applyConfiguration(DEFAULT_CONFIG);
-<<<<<<< HEAD
-	DW1000Ng::applyInterruptConfiguration(DEFAULT_INTERRUPT_CONFIG);
-
-    DW1000Ng::setNetworkId(10);
-    DW1000Ng::setDeviceAddress(0x1112);
-	
-=======
     DW1000Ng::applyInterruptConfiguration(DEFAULT_INTERRUPT_CONFIG);
 
     DW1000Ng::setNetworkId(NETWORK_ID);
     DW1000Ng::setDeviceAddress(LOCAL_ADDRESS);
   
->>>>>>> 21e12c74024c52ba49cd10118e7ddbf86318cdd9
     DW1000Ng::setAntennaDelay(16436);
     
     Serial.println(F("Committed configuration ..."));

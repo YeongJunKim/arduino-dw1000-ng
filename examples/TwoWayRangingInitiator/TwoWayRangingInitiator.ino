@@ -83,7 +83,7 @@ uint64_t timePollSent;
 uint64_t timePollAckReceived;
 uint64_t timeRangeSent;
 // data buffer
-#define LEN_DATA 20
+#define LEN_DATA 24
 byte data[LEN_DATA];
 // watchdog and reset period
 uint32_t lastActivity;
@@ -180,6 +180,8 @@ void handleTimeOut() {
 
 void transmitPoll() {
     data[0] = POLL;
+    data[16] = LOCAL_ADDRESS & 0xFF;
+    data[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
     DW1000Ng::setTransmitData(data, LEN_DATA);
     DW1000Ng::startTransmit();
     int ct = 0;

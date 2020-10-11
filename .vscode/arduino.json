@@ -1,7 +1,8 @@
 {
     "programmer": "AVRISP mkII",
-    "board": "arduino:avr:uno",
-    "port": "COM25",
+    "board": "STM32:stm32:Nucleo_64",
+    "port": "COM7",
     "sketch": "examples\\DistributedMultiConnection\\DistributedMultiConnection.ino",
-    "output": "../build"
+    "output": "../build",
+    "configuration": "pnum=NUCLEO_G071RB,upload_method=MassStorage,xserial=generic,usb=none,xusb=FS,opt=osstd,rtlib=nano"
 }
