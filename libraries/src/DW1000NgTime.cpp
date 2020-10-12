@@ -22,7 +22,11 @@
  * SOFTWARE.
 */
 
-#include <Arduino.h>
+#ifdef STM32
+
+#else
+ #include <Arduino.h>
+#endif
 #include "DW1000NgTime.hpp"
 #include "DW1000NgConstants.hpp"
 

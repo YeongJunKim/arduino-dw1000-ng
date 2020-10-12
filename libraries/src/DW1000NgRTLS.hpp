@@ -24,7 +24,12 @@
 
 #pragma once
 
-#include <Arduino.h>
+#ifdef STM32
+#include "typedef.hpp"
+#include "utils.hpp"
+#else
+ #include <Arduino.h>
+#endif
 
 /* Frame control */
 constexpr byte BLINK = 0xC5;

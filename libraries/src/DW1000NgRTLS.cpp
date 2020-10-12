@@ -22,7 +22,12 @@
  * SOFTWARE.
 */
 
-#include <Arduino.h>
+#ifdef STM32
+#include "typedef.hpp"
+#include "utils.hpp"
+#else
+ #include <Arduino.h>
+#endif
 #include "DW1000NgRTLS.hpp"
 #include "DW1000Ng.hpp"
 #include "DW1000NgUtils.hpp"

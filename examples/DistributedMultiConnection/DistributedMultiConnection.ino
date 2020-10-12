@@ -1,7 +1,7 @@
 #include <DW1000Ng.hpp>
 #include <DW1000NgUtils.hpp>
 #include <DW1000NgRanging.hpp>
-#include <queue.hpp>
+// #include <queue.hpp>
 
 // connection pins
 const uint8_t PIN_RST   = 7;  // reset pin
@@ -73,10 +73,10 @@ If LOCAL_ADDRESS == 0xFFFF -> broadcast
 
 
 
-
+#define LEN_DATA 24
 byte data[LEN_DATA];
 
-Queue sendQueue;
+// Queue sendQueue;
 
 
 uint32_t lastActivity;

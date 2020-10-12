@@ -24,8 +24,12 @@
 
 #pragma once
 
-#include <Arduino.h>
+#ifdef STM32
 
+#include "typedef.hpp"
+#else
+ #include <Arduino.h>
+#endif
 #define GPIO_MODE 0
 #define LED_MODE 1
 

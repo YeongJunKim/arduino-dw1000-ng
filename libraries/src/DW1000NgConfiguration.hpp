@@ -24,7 +24,12 @@
 
 #pragma once
 
-#include <Arduino.h>
+#ifdef STM32
+
+#include "typedef.hpp"
+#else
+ #include <Arduino.h>
+#endif
 #include "DW1000NgConstants.hpp"
 
 typedef struct device_configuration_t {

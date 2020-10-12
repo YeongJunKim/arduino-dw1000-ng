@@ -51,6 +51,14 @@
 #include "DW1000NgRegisters.hpp"
 #include "SPIporting.hpp"
 
+
+#ifdef STM32
+#include "typedef.hpp"
+#include "utils.hpp"
+#else
+ #include <Arduino.h>
+#endif
+
 namespace DW1000Ng {
 	
 	/* anonymous namespace to host private-like variables and methods */
@@ -1241,8 +1249,11 @@ namespace DW1000Ng {
 	}
 
 	/* ####################### PUBLIC ###################### */
-
+#ifdef STM32
+	void initialize(GPIO_TypeDef *ssGPIOx, uint16_t ss, GPIO_TypeDef *irqGPIOx, uint16_t irq, GPIO_TypeDef *rstGPIOx, uint16_t rst) {
+#else
 	void initialize(uint8_t ss, uint8_t irq, uint8_t rst) {
+#endif
 		// generous initial init/wake-up-idle delay
 		delay(5);
 		_ss = ss;
@@ -1251,7 +1262,12 @@ namespace DW1000Ng {
 
 		if(rst != 0xff) {
 			// DW1000 data sheet v2.08 §5.6.1 page 20, the RSTn pin should not be driven high but left floating.
+//TODO STM32
+#ifdef STM32
+			gpioMode(DW_RST_GPIO_Port, DW_RST_Pin, GPIO_MODE_INPUT);
+#else
 			pinMode(_rst, INPUT);
+#endif
 		}
 
 		SPIporting::SPIinit();
@@ -1259,8 +1275,20 @@ namespace DW1000Ng {
 		// attach interrupt
 		// TODO throw error if pin is not a interrupt pin
 		if(_irq != 0xff)
+
+#ifdef STM32
+			//TODO STM32
+			//The callback Function of irq pin is defined in main.cpp
+#else
 			attachInterrupt(digitalPinToInterrupt(_irq), interruptServiceRoutine, RISING);
+#endif
+
+#ifdef STM32
+		// TODO STM32 not use irq pin in SPI select function.
+		SPIporting::SPIselect(SPI1_DW_SS_GPIO_Port, SPI1_DW_SS_Pin, 0);
+#else
 		SPIporting::SPIselect(_ss, _irq);
+#endif
 		// reset chip (either soft or hard)
 		reset();
 		
@@ -1301,7 +1329,12 @@ namespace DW1000Ng {
 	}
 
 	void initializeNoInterrupt(uint8_t ss, uint8_t rst) {
+//TODO
+#ifdef STM32
+		DW1000Ng::initialize(SPI1_DW_SS_GPIO_Port, SPI1_DW_SS_Pin, DW_IRQ_GPIO_Port, 0xFF, DW_RST_GPIO_Port, DW_RST_Pin);
+#else
 		initialize(ss, 0xff, rst);
+#endif
 	}
 
 	/* callback handler management. */
@@ -1469,10 +1502,18 @@ namespace DW1000Ng {
 		DW1000NgUtils::writeValueToBytes(expectedDeviceId, 0xDECA0130, LEN_DEV_ID);
 		_readBytesFromRegister(DEV_ID, NO_SUB, deviceId, LEN_DEV_ID);
 		if (memcmp(deviceId, expectedDeviceId, LEN_DEV_ID)) {
+//TODO STM32 gpio write
+#ifdef STM32
+			gpioWrite(SPI1_DW_SS_GPIO_Port, SPI1_DW_SS_Pin, GPIO_PIN_RESET);
+			delay(1);
+			gpioWrite(SPI1_DW_SS_GPIO_Port, SPI1_DW_SS_Pin, GPIO_PIN_SET);
+			delay(5);
+#else
 			digitalWrite(_ss, LOW);
 			delay(1);
 			digitalWrite(_ss, HIGH);
 			delay(5);
+#endif
 			setTxAntennaDelay(_antennaTxDelay);
 			if (_debounceClockEnabled){
 					enableDebounceClock();
@@ -1485,11 +1526,20 @@ namespace DW1000Ng {
 			softwareReset();
 		} else {
 			// DW1000Ng data sheet v2.08 §5.6.1 page 20, the RSTn pin should not be driven high but left floating.
+//TODO STM32
+#ifdef STM32
+			gpioMode(DW_RST_GPIO_Port, DW_RST_Pin, GPIO_MODE_OUTPUT_PP);
+			gpioWrite(DW_RST_GPIO_Port, DW_RST_Pin, GPIO_PIN_RESET);
+			delay(2);
+			gpioMode(DW_RST_GPIO_Port, DW_RST_Pin, GPIO_MODE_INPUT);
+			delay(5);
+#else
 			pinMode(_rst, OUTPUT);
 			digitalWrite(_rst, LOW);
 			delay(2);  // DW1000Ng data sheet v2.08 §5.6.1 page 20: nominal 50ns, to be safe take more time
 			pinMode(_rst, INPUT);
 			delay(5); // dw1000Ng data sheet v1.2 page 5: nominal 3 ms, to be safe take more time
+#endif
 		}
 	}
 
@@ -1937,6 +1987,16 @@ namespace DW1000Ng {
 		_writeTransmitFrameControlRegister();
 	}
 
+#ifdef STM32
+	void setTransmitData(const std::string& data) {
+		uint16_t n = data.length()+1;
+		byte* dataBytes = (byte*)malloc(n);
+		strcpy((char *)dataBytes, data.c_str());
+		setTransmitData(dataBytes, n);
+		free(dataBytes);
+	}
+
+#else
 	void setTransmitData(const String& data) {
 		uint16_t n = data.length()+1;
 		byte* dataBytes = (byte*)malloc(n);
@@ -1944,6 +2004,7 @@ namespace DW1000Ng {
 		setTransmitData(dataBytes, n);
 		free(dataBytes);
 	}
+#endif
 
 	// TODO reorder
 	uint16_t getReceivedDataLength() {
@@ -1966,7 +2027,25 @@ namespace DW1000Ng {
 		}
 		_readBytesFromRegister(RX_BUFFER, NO_SUB, data, n);
 	}
-
+#ifdef STM32
+	void getReceivedData(std::string& data) {
+		uint16_t i;
+		uint16_t n = getReceivedDataLength(); // number of bytes w/o the two FCS ones
+		if(n <= 0) { // TODO
+			return;
+		}
+		byte* dataBytes = (byte*)malloc(n);
+		getReceivedData(dataBytes, n);
+		// clear string
+		data.erase(0);
+		data  = "";
+		// append to string
+		for(i = 0; i < n; i++) {
+			data += (char)dataBytes[i];
+		}
+		free(dataBytes);
+	}
+#else
 	void getReceivedData(String& data) {
 		uint16_t i;
 		uint16_t n = getReceivedDataLength(); // number of bytes w/o the two FCS ones
@@ -1984,7 +2063,7 @@ namespace DW1000Ng {
 		}
 		free(dataBytes);
 	}
-
+#endif
 	uint64_t getTransmitTimestamp() {
 		byte data[LENGTH_TIMESTAMP];
 		memset(data, 0 , LENGTH_TIMESTAMP);

@@ -24,7 +24,11 @@
 
 #pragma once
 
-#include <Arduino.h>
+#ifdef STM32
+
+#else
+ #include <Arduino.h>
+#endif
 
 namespace DW1000NgRanging {
 

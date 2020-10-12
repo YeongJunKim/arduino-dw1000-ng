@@ -46,10 +46,16 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <Arduino.h>
+#ifdef STM32
+#include "typedef.hpp"
+#include "utils.hpp"
+#else
+ #include <Arduino.h>
+#endif
 #include "DW1000NgConstants.hpp"
 #include "DW1000NgConfiguration.hpp"
 #include "DW1000NgCompileOptions.hpp"
+
 
 namespace DW1000Ng {
 	/** 
@@ -60,8 +66,14 @@ namespace DW1000Ng {
 	@param[in] irq The interrupt line/pin that connects the Arduino.
 	@param[in] rst The reset line/pin for hard resets of ICs that connect to the Arduino. Value 0xff means soft reset.
 	*/
+//TODO
+#ifdef STM32
+//void gpioWrite(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState);
+	void initialize(GPIO_TypeDef *ssGPIOx, uint16_t ss, GPIO_TypeDef *irqGPIOx, uint16_t irq, GPIO_TypeDef *rstGPIOx, uint16_t rst);
+#else
 	void initialize(uint8_t ss, uint8_t irq, uint8_t rst = 0xff);
 
+#endif
 	/** 
 	Initiates and starts a sessions with a DW1000 without interrupt. If rst is not set or value 0xff, a soft resets (i.e. command
 	triggered) are used and it is assumed that no reset line is wired.
@@ -240,8 +252,11 @@ namespace DW1000Ng {
 
 	@param [in] data the string to transmit
 	*/
+#ifdef STM32
+	void setTransmitData(const std::string& data);
+#else
 	void setTransmitData(const String& data);
-
+#endif
 	/**
 	Gets the received bytes and stores them in a byte array
 
@@ -255,8 +270,11 @@ namespace DW1000Ng {
 
 	param [out] data the string that will contain the data
 	*/
+#ifdef STM32
+	void getReceivedData(std::string& data);
+#else
 	void getReceivedData(String& data);
-
+#endif
 	/**
 	Calculates the length of the received data
 

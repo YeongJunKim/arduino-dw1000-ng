@@ -42,7 +42,12 @@
  * Helper functions.
  */
 
-#include <Arduino.h>
+#ifdef STM32
+#include "typedef.hpp"
+#include "utils.hpp"
+#else
+ #include <Arduino.h>
+#endif
 #include "DW1000NgUtils.hpp"
 #include "DW1000NgConstants.hpp"
 #include "DW1000NgRegisters.hpp"

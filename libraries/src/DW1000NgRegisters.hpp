@@ -24,7 +24,11 @@
 
 #pragma once
 
-#include <Arduino.h>
+#ifdef STM32
+
+#else
+ #include <Arduino.h>
+#endif
 
 // no sub-address for register write
 constexpr uint16_t NO_SUB = 0xFF;

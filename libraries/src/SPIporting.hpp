@@ -27,7 +27,11 @@
 
 #pragma once
 
-#include <Arduino.h>
+#ifdef STM32
+
+#else
+ #include <Arduino.h>
+#endif
 #include "DW1000NgConstants.hpp"
 
 namespace SPIporting{
@@ -46,8 +50,12 @@ namespace SPIporting{
     /** 
 	(Re-)selects a specific DW1000 chip for communication. Used in case you switched SPI to another device.
 	*/
+	//TODO STM32 method.
+#ifdef STM32
+	void SPIselect(GPIO_TypeDef *GPIOx, uint8_t ss, uint8_t irq);
+#else
 	void SPIselect(uint8_t slaveSelectPIN, uint8_t irq = 0xff);
-
+#endif
     /**
     Arduino function to write to the SPI.
     Takes two separate byte buffers for write header and write data

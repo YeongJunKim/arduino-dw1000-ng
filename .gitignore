@@ -12,3 +12,7 @@ CMakeLists.txt
 cmake-build-debug
 #exclude OSX stuff
 .DS_STORE
+build/*
+stm32cubeide/.metadata/
+Debug/
+

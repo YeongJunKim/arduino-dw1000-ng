@@ -3,6 +3,8 @@
         {
             "name": "Win32",
             "includePath": [
+                "C:\\Program Files (x86)\\Arduino\\tools\\**",
+                "C:\\Program Files (x86)\\Arduino\\hardware\\arduino\\avr\\**",
                 "C:\\Users\\dud37\\AppData\\Local\\Arduino15\\packages\\STM32\\tools\\**",
                 "C:\\Users\\dud37\\AppData\\Local\\Arduino15\\packages\\STM32\\hardware\\stm32\\1.9.0\\**",
                 "${workspaceFolder}/**"

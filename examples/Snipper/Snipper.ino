@@ -129,7 +129,7 @@ interrupt_configuration_t DEFAULT_INTERRUPT_CONFIG = {
 void setup() {
     
     // DEBUG monitoring
-    Serial.begin(230400);
+    Serial.begin(115200);
     delay(1000);
     Serial.println(F("### DW1000Ng-arduino-ranging-anchor ###"));
     // initialize the driver

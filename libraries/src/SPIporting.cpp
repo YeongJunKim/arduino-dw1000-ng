@@ -25,12 +25,81 @@
  * Arduino porting for the SPI interface.
 */
 
-#include <Arduino.h>
+#ifdef STM32
+#include "typedef.hpp"
+#include "utils.hpp"
+#else
+ #include <Arduino.h>
 #include <SPI.h>
+#endif
 #include "SPIporting.hpp"
 #include "DW1000NgConstants.hpp"
 #include "DW1000NgRegisters.hpp"
 
+#ifdef STM32
+namespace SPIporting {
+namespace {
+
+		constexpr uint32_t EspSPImaximumSpeed = 20000000; //20MHz
+		constexpr uint32_t ArduinoSPImaximumSpeed = 16000000; //16MHz
+		constexpr uint32_t SPIminimumSpeed = 2000000; //2MHz
+
+		/* SPI relative variables */
+		#if defined(ESP32) || defined(ESP8266)
+			const SPISettings _fastSPI = SPISettings(EspSPImaximumSpeed, MSBFIRST, SPI_MODE0);
+		#else
+//			TODO
+//			SPISettings _fastSPI = SPISettings(ArduinoSPImaximumSpeed, MSBFIRST, SPI_MODE0);
+		#endif
+//		TODO
+//		const SPISettings _slowSPI = SPISettings(SPIminimumSpeed, MSBFIRST, SPI_MODE0);
+//		const SPISettings* _currentSPI = &_fastSPI;
+
+		void _openSPI(GPIO_TypeDef *GPIOx, uint16_t ss) {
+//			TODO
+			gpioWrite(GPIOx, ss, GPIO_PIN_RESET);
+//			SPI.beginTransaction(*_currentSPI);
+//			digitalWrite(slaveSelectPIN, LOW);
+		}
+
+    	void _closeSPI(GPIO_TypeDef *GPIOx, uint16_t ss) {
+//    		TODO
+			gpioWrite(GPIOx, ss, GPIO_PIN_SET);
+//			digitalWrite(slaveSelectPIN, HIGH);
+//			SPI.endTransaction();
+		}
+	}
+    void SPIinit()
+    {
+
+    }
+	void SPIend()
+    {
+
+    }
+	void SPIselect(GPIO_TypeDef *GPIOx, uint8_t ss, uint8_t irq)
+    {
+		gpioMode(GPIOx, ss, GPIO_MODE_OUTPUT_PP);
+		gpioWrite(GPIOx, ss, GPIO_PIN_SET);
+    }
+    void writeToSPI(uint8_t slaveSelectPIN, uint8_t headerLen, byte header[], uint16_t dataLen, byte data[])
+    {
+    	_openSPI(SPI1_DW_SS_GPIO_Port, SPI1_DW_SS_Pin);
+
+    	_closeSPI(SPI1_DW_SS_GPIO_Port, SPI1_DW_SS_Pin);
+    }
+    void readFromSPI(uint8_t slaveSelectPIN, uint8_t headerLen, byte header[], uint16_t dataLen, byte data[])
+    {
+    	_openSPI(SPI1_DW_SS_GPIO_Port, SPI1_DW_SS_Pin);
+
+    	_closeSPI(SPI1_DW_SS_GPIO_Port, SPI1_DW_SS_Pin);
+    }
+    void setSPIspeed(SPIClock speed)
+    {
+
+    }
+}
+#else
 namespace SPIporting {
 	
 	namespace {
@@ -109,3 +178,4 @@ namespace SPIporting {
 	}
 
 }
+#endif

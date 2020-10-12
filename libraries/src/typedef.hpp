@@ -7,12 +7,15 @@
 #endif
 #ifdef STM32
 #include "main.h"
+#include "math.h"
+#include <string>
+#include <cstring>
+
 #ifdef G071RB
 
 #endif
 
 
-#include <string>
 
 typedef uint8_t byte;
 typedef int boolean;
