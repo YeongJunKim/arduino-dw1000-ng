@@ -83,8 +83,6 @@ static void MX_TIM8_Init(void);
 /* USER CODE BEGIN 0 */
 extern int dw_main(void);
 
-
-
 /* USER CODE END 0 */
 
 /**
