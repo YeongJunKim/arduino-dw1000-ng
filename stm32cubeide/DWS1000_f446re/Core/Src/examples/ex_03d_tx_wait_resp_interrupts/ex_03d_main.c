@@ -25,7 +25,8 @@
 
 #include <rng_typedef.h>
 
-/* Example application name and version to display. */
+#define stdio_write printf
+
 #define APP_NAME "TX W4R IRQ v1.0"
 
 /* Default communication configuration. We use here EVK1000's default mode (mode 3). */
@@ -41,24 +42,13 @@ static dwt_config_t config = {
     DWT_PHRMODE_STD, /* PHY header mode. */
     (1025 + 64 - 32) /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 };
-
-/* The frame sent in this example is a blink encoded as per the ISO/IEC 24730-62:2013 standard. It is a 14-byte frame composed of the following fields:
- *     - byte 0: frame control (0xC5 to indicate a multipurpose frame using 64-bit addressing).
- *     - byte 1: sequence number, incremented for each new frame.
- *     - byte 2 -> 9: device ID, see NOTE 1 below.
- *     - byte 10: encoding header (0x43 to indicate no extended ID, temperature, or battery status is carried in the message).
- *     - byte 11: EXT header (0x02 to indicate tag is listening for a response immediately after this message).
- *     - byte 12/13: frame check-sum, automatically set by DW1000. */
 static uint8 tx_msg[] = {0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E', 0x43, 0x02, 0, 0};
 /* Index to access the sequence number of the blink frame in the tx_msg array. */
 #define BLINK_FRAME_SN_IDX 1
-
 /* Delay from end of transmission to activation of reception, expressed in UWB microseconds (1 uus is 512/499.2 microseconds). See NOTE 2 below. */
 #define TX_TO_RX_DELAY_UUS 60
-
 /* Receive response timeout, expressed in UWB microseconds. See NOTE 3 below. */
-#define RX_RESP_TO_UUS 50000
-
+#define RX_RESP_TO_UUS 5000
 /* Default inter-frame delay period, in milliseconds. */
 #define DFLT_TX_DELAY_MS 1000
 /* Inter-frame delay period in case of RX timeout, in milliseconds.
@@ -93,21 +83,12 @@ volatile uint16_t tx_conf_flag = 0;
 dw_dev device[DW_DEV_MAX];
 
 
-/**
- * Application entry point.
- */
-#define stdio_write printf
+
+
 int dw_main(void)
 {
-    /* Display application name. */
     stdio_write(APP_NAME);
-
-    /* Install DW1000 IRQ handler. */
     port_set_deca_isr(dwt_isr);
-
-    /* Reset and initialise DW1000. See NOTE 5 below.
-     * For initialisation, DW1000 clocks must be temporarily set to crystal speed. After initialisation SPI rate can be increased for optimum
-     * performance. */
     reset_DW1000(); /* Target specific drive of RSTn line into DW1000 low for a period. */
     port_set_dw1000_slowrate();
     if (dwt_initialise(DWT_LOADNONE) == DWT_ERROR)
@@ -118,39 +99,30 @@ int dw_main(void)
     }
     port_set_dw1000_fastrate();
 
-    /* Configure DW1000. See NOTE 6 below. */
     dwt_configure(&config);
-
-    /* Register RX call-back. */
     dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb, &rx_to_cb, &rx_err_cb);
-
-    /* Enable wanted interrupts (TX confirmation, RX good frames, RX timeouts and RX errors). */
     dwt_setinterrupt(DWT_INT_TFRS | DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RXPTO | DWT_INT_RPHE | DWT_INT_RFCE | DWT_INT_RFSL | DWT_INT_SFDT, 1);
-
-    /* Set delay to turn reception on after transmission of the frame. See NOTE 2 below. */
     dwt_setrxaftertxdelay(TX_TO_RX_DELAY_UUS);
+//    dwt_setrxtimeout(RX_RESP_TO_UUS);
 
 
-    /* Set response frame timeout. */
-    dwt_setrxtimeout(RX_RESP_TO_UUS);
-
-
-    /* Loop forever sending and receiving frames periodically. */
     while (1)
     {
         /* Write frame data to DW1000 and prepare transmission. See NOTE 7 below. */
         dwt_writetxdata(sizeof(tx_msg), tx_msg, 0); /* Zero offset in TX buffer. */
-        dwt_writetxfctrl(sizeof(tx_msg), 0, 0); /* Zero offset in TX buffer, no ranging. */
+        dwt_writetxfctrl(sizeof(tx_msg), 0, 0);     /* Zero offset in TX buffer, no ranging. */
 
         /* Start transmission, indicating that a response is expected so that reception is enabled immediately after the frame is sent. */
 
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+       	dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
+        Sleep(5);
 
-        if(tx_conf_flag == 0)
+        if(tx_conf_flag == 0) {
         	dwt_starttx(DWT_START_TX_IMMEDIATE);
-        if(tx_conf_flag == 1)
+        	while(tx_conf_flag == 0){};
         	tx_conf_flag = 0;
+        }
 //
 
 
@@ -165,7 +137,7 @@ int dw_main(void)
 //        {
 //            Sleep(tx_delay_ms);
 //        }
-        Sleep(60);
+        Sleep(5);
 //        printf("flags : %d, %d, %d, %d \r\n",rx_ok_flag,rx_to_flag,rx_err_flag,tx_conf_flag);
         /* Increment the blink frame sequence number (modulo 256). */
         tx_msg[BLINK_FRAME_SN_IDX]++;
@@ -269,7 +241,7 @@ static void tx_conf_cb(const dwt_cb_data_t *cb_data)
      * An actual application that would not need this callback could simply not define it and set the corresponding field to NULL when calling
      * dwt_setcallbacks(). The ISR will not call it which will allow to save some interrupt processing time. */
 
-//    printf("tx done \r\n");
+    printf("tx done \r\n");
     tx_conf_flag = 1;
     /* TESTING BREAKPOINT LOCATION #4 */
 }
