@@ -205,7 +205,6 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
 			printf("%02X,", rx_buffer[i]);
 		}
 		stdio_write("\r\n");
-
     }
 
     /* Set corresponding inter-frame delay. */

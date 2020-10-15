@@ -47,10 +47,10 @@ typedef struct _dw_dev_config{
 
 
 boolean rng_check_dev(uint16_t id);
-boolean rng_find_empty_index_dev(void);
+uint16_t rng_find_empty_index_dev(void);
 boolean rng_add_dev(uint16_t id, uint16_t index);
 boolean rng_del_dev(uint16_t id);
-boolean rng_init_dev(uint16_t id);
+boolean rng_init_dev(uint16_t index);
 
 void rng_machine_dev(uint8_t *data, uint16_t length);
 
