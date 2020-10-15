@@ -12,6 +12,7 @@
  */
 #ifdef EX_02A_DEF
 #include "deca_device_api.h"
+
 #include "deca_regs.h"
 #include "stdio.h"
 #include "deca_spi.h"
@@ -40,7 +41,12 @@ static dwt_config_t config = {
 
 /* Buffer to store received frame. See NOTE 1 below. */
 #define FRAME_LEN_MAX 127
+#define TX_TO_RX_DELAY_UUS 60
+
+/* Receive response timeout, expressed in UWB microseconds. See NOTE 3 below. */
+#define RX_RESP_TO_UUS 5000
 static uint8 rx_buffer[FRAME_LEN_MAX];
+static uint8 tx_msg[] = {0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E', 1, 3};
 
 /* Hold copy of status register state here for reference so that it can be examined at a debug breakpoint. */
 static uint32 status_reg = 0;
@@ -49,6 +55,21 @@ char dist_str[20] = {0};
 /* Hold copy of frame length of frame received (if good) so that it can be examined at a debug breakpoint. */
 static uint16 frame_len = 0;
 
+static void rx_ok_cb(const dwt_cb_data_t *cb_data);
+static void rx_to_cb(const dwt_cb_data_t *cb_data);
+static void rx_err_cb(const dwt_cb_data_t *cb_data);
+static void tx_conf_cb(const dwt_cb_data_t *cb_data);
+uint32_t nTick = 0;
+uint32_t pTick = 0;
+
+
+
+uint32_t cbTxDoneCllabckCnt = 0;
+uint32_t cbRxOkCallbackCnt = 0;
+uint32_t cbRxToCallbackCnt = 0;
+uint32_t cbRxErrCallbackCnt = 0;
+
+uint32_t cbRxToCallbackFlag = 0;
 /**
  * Application entry point.
  */
@@ -56,6 +77,7 @@ int dw_main(void)
 {
     /* Display application name. */
     stdio_write(APP_NAME);
+//    port_set_deca_isr(dwt_isr);
 
     /* Reset and initialise DW1000. See NOTE 2 below.
      * For initialisation, DW1000 clocks must be temporarily set to crystal speed. After initialisation SPI rate can be increased for optimum
@@ -70,8 +92,27 @@ int dw_main(void)
     }
     port_set_dw1000_fastrate();
 
+//#define DWT_INT_TFRS            0x00000080          // frame sent
+//#define DWT_INT_LDED            0x00000400          // micro-code has finished execution
+//#define DWT_INT_RFCG            0x00004000          // frame received with good CRC
+//#define DWT_INT_RPHE            0x00001000          // receiver PHY header error
+//#define DWT_INT_RFCE            0x00008000          // receiver CRC error
+//#define DWT_INT_RFSL            0x00010000          // receiver sync loss error
+//#define DWT_INT_RFTO            0x00020000          // frame wait timeout
+//#define DWT_INT_RXOVRR          0x00100000          // receiver overrun
+//#define DWT_INT_RXPTO           0x00200000          // preamble detect timeout
+//#define DWT_INT_GPIO            0x00400000          // GPIO interrupt
+//#define DWT_INT_SFDT            0x04000000          // SFD timeout
+//#define DWT_INT_ARFE            0x20000000          // frame rejected (due to frame filtering configuration)
+
     /* Configure DW1000. */
     dwt_configure(&config);
+//    dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb, &rx_to_cb, &rx_err_cb);
+//    dwt_setinterrupt(DWT_INT_TFRS | DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RXPTO | DWT_INT_RPHE | DWT_INT_RFCE | DWT_INT_RFSL | DWT_INT_SFDT, 1);
+//
+//    dwt_setrxaftertxdelay(20);
+//    dwt_setrxtimeout(500);
+
 
     uint8_t setID[8] = {1,2,3,4,5,6,7,8};
 
@@ -105,7 +146,7 @@ int dw_main(void)
         /* Poll until a frame is properly received or an error/timeout occurs. See NOTE 4 below.
          * STATUS register is 5 bytes long but, as the event we are looking at is in the first byte of the register, we can use this simplest API
          * function to access it. */
-        while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG | SYS_STATUS_ALL_RX_ERR)))
+        while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG | SYS_STATUS_ALL_RX_ERR )))
         { };
 
         if (status_reg & SYS_STATUS_RXFCG)
@@ -130,10 +171,47 @@ int dw_main(void)
         else
         {
             /* Clear RX error events in the DW1000 status register. */
+        	printf("error occured in rx seqeunce \r\n");
             dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
+        }
+
+        nTick = HAL_GetTick();
+        if(nTick - pTick > 100)
+        {
+        	dwt_writetxdata(sizeof(tx_msg), tx_msg, 0);
+        	dwt_writetxfctrl(sizeof(tx_msg), 0, 0);
+        	dwt_starttx(DWT_START_TX_IMMEDIATE);
+        	while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS)) {};
+
+        	dwt_write32bitreg(SYS_STATE_ID, SYS_STATUS_TXFRS);
+        	tx_msg[1]++;
+        	pTick = nTick;
         }
     }
 }
+
+
+//typedef void (*dwt_cb_t)(const dwt_cb_data_t *);
+
+
+static void tx_conf_cb(const dwt_cb_data_t *cb_data)
+{
+	cbTxDoneCllabckCnt++;
+}
+static void rx_ok_cb(const dwt_cb_data_t *cb_data)
+{
+	cbRxOkCallbackCnt++;
+}
+static void rx_to_cb(const dwt_cb_data_t *cb_data)
+{
+	cbRxToCallbackCnt++;
+	cbRxToCallbackFlag = 1;
+}
+static void rx_err_cb(const dwt_cb_data_t *cb_data)
+{
+	cbRxErrCallbackCnt++;
+}
+
 #endif
 /*****************************************************************************************************************************************************
  * NOTES:

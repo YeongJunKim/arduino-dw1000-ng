@@ -46,4 +46,14 @@ typedef struct _dw_dev_config{
 } dw_deg_config;
 
 
+boolean rng_check_dev(uint16_t id);
+boolean rng_find_empty_index_dev(void);
+boolean rng_add_dev(uint16_t id, uint16_t index);
+boolean rng_del_dev(uint16_t id);
+boolean rng_init_dev(uint16_t id);
+
+void rng_machine_dev(uint8_t *data, uint16_t length);
+
+dw_dev rng_dev[DW_DEV_MAX];
+
 #endif /* SRC_TYPEDEFS_RNG_TYPEDEF_H_ */

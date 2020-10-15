@@ -20,6 +20,11 @@
 #include "deca_spi.h"
 #include "port.h"
 
+#include <stdio.h>
+#include <string.h>
+
+#include <rng_typedef.h>
+
 /* Example application name and version to display. */
 #define APP_NAME "TX W4R IRQ v1.0"
 
@@ -29,10 +34,10 @@ static dwt_config_t config = {
     DWT_PRF_64M,     /* Pulse repetition frequency. */
     DWT_PLEN_1024,   /* Preamble length. Used in TX only. */
     DWT_PAC32,       /* Preamble acquisition chunk size. Used in RX only. */
-    9,               /* TX preamble code. Used in TX only. */
-    9,               /* RX preamble code. Used in RX only. */
+    3,               /* TX preamble code. Used in TX only. */
+    3,               /* RX preamble code. Used in RX only. */
     1,               /* 0 to use standard SFD, 1 to use non-standard SFD. */
-    DWT_BR_110K,     /* Data rate. */
+    DWT_BR_850K,     /* Data rate. */
     DWT_PHRMODE_STD, /* PHY header mode. */
     (1025 + 64 - 32) /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 };
@@ -52,7 +57,7 @@ static uint8 tx_msg[] = {0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E', 0x43, 
 #define TX_TO_RX_DELAY_UUS 60
 
 /* Receive response timeout, expressed in UWB microseconds. See NOTE 3 below. */
-#define RX_RESP_TO_UUS 5000
+#define RX_RESP_TO_UUS 50000
 
 /* Default inter-frame delay period, in milliseconds. */
 #define DFLT_TX_DELAY_MS 1000
@@ -77,9 +82,21 @@ static void rx_to_cb(const dwt_cb_data_t *cb_data);
 static void rx_err_cb(const dwt_cb_data_t *cb_data);
 static void tx_conf_cb(const dwt_cb_data_t *cb_data);
 
+
+
+volatile uint16_t rx_ok_flag = 0;
+volatile uint16_t rx_to_flag = 0;
+volatile uint16_t rx_err_flag = 0;
+volatile uint16_t tx_conf_flag = 0;
+
+
+dw_dev device[DW_DEV_MAX];
+
+
 /**
  * Application entry point.
  */
+#define stdio_write printf
 int dw_main(void)
 {
     /* Display application name. */
@@ -95,7 +112,7 @@ int dw_main(void)
     port_set_dw1000_slowrate();
     if (dwt_initialise(DWT_LOADNONE) == DWT_ERROR)
     {
-        stdio_write("INIT FAILED");
+        stdio_write("INIT FAILED  \r\n");
         while (1)
         { };
     }
@@ -113,8 +130,10 @@ int dw_main(void)
     /* Set delay to turn reception on after transmission of the frame. See NOTE 2 below. */
     dwt_setrxaftertxdelay(TX_TO_RX_DELAY_UUS);
 
+
     /* Set response frame timeout. */
     dwt_setrxtimeout(RX_RESP_TO_UUS);
+
 
     /* Loop forever sending and receiving frames periodically. */
     while (1)
@@ -124,18 +143,30 @@ int dw_main(void)
         dwt_writetxfctrl(sizeof(tx_msg), 0, 0); /* Zero offset in TX buffer, no ranging. */
 
         /* Start transmission, indicating that a response is expected so that reception is enabled immediately after the frame is sent. */
-        dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+
+
+        if(tx_conf_flag == 0)
+        	dwt_starttx(DWT_START_TX_IMMEDIATE);
+        if(tx_conf_flag == 1)
+        	tx_conf_flag = 0;
+//
+
+
+//        dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
         /* Wait for any RX event. */
-        while (tx_delay_ms == -1)
-        { };
+//        while (tx_delay_ms == -1)
+//        { };
 
         /* Execute the defined delay before next transmission. */
-        if (tx_delay_ms > 0)
-        {
-            Sleep(tx_delay_ms);
-        }
-
+//        if (tx_delay_ms > 0)
+//        {
+//            Sleep(tx_delay_ms);
+//        }
+        Sleep(60);
+//        printf("flags : %d, %d, %d, %d \r\n",rx_ok_flag,rx_to_flag,rx_err_flag,tx_conf_flag);
         /* Increment the blink frame sequence number (modulo 256). */
         tx_msg[BLINK_FRAME_SN_IDX]++;
 
@@ -168,11 +199,19 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     if (cb_data->datalength <= FRAME_LEN_MAX)
     {
         dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
+        stdio_write("Received data : ");
+		for (int i = 0; i < cb_data->datalength; i++)
+		{
+			printf("%02X,", rx_buffer[i]);
+		}
+		stdio_write("\r\n");
+
     }
 
     /* Set corresponding inter-frame delay. */
     tx_delay_ms = DFLT_TX_DELAY_MS;
 
+    rx_ok_flag = 1;
     /* TESTING BREAKPOINT LOCATION #1 */
 }
 
@@ -190,6 +229,8 @@ static void rx_to_cb(const dwt_cb_data_t *cb_data)
     /* Set corresponding inter-frame delay. */
     tx_delay_ms = RX_TO_TX_DELAY_MS;
 
+    printf("received timeout \r\n");
+    rx_to_flag = 1;
     /* TESTING BREAKPOINT LOCATION #2 */
 }
 
@@ -207,6 +248,8 @@ static void rx_err_cb(const dwt_cb_data_t *cb_data)
     /* Set corresponding inter-frame delay. */
     tx_delay_ms = RX_ERR_TX_DELAY_MS;
 
+    printf("received error  \r\n");
+    rx_err_flag = 1;
     /* TESTING BREAKPOINT LOCATION #3 */
 }
 
@@ -227,6 +270,8 @@ static void tx_conf_cb(const dwt_cb_data_t *cb_data)
      * An actual application that would not need this callback could simply not define it and set the corresponding field to NULL when calling
      * dwt_setcallbacks(). The ISR will not call it which will allow to save some interrupt processing time. */
 
+//    printf("tx done \r\n");
+    tx_conf_flag = 1;
     /* TESTING BREAKPOINT LOCATION #4 */
 }
 #endif
@@ -235,10 +280,10 @@ static void tx_conf_cb(const dwt_cb_data_t *cb_data)
  *
  * 1. The device ID is a hard coded constant in the blink to keep the example simple but for a real product every device should have a unique ID.
  *    For development purposes it is possible to generate a DW1000 unique ID by combining the Lot ID & Part Number values programmed into the
- *    DW1000 during its manufacture. However there is no guarantee this will not conflict with someone else’s implementation. We recommended that
+ *    DW1000 during its manufacture. However there is no guarantee this will not conflict with someone elseï¿½s implementation. We recommended that
  *    customers buy a block of addresses from the IEEE Registration Authority for their production items. See "EUI" in the DW1000 User Manual.
  * 2. TX to RX delay can be set to 0 to activate reception immediately after transmission. But, on the responder side, it takes time to process the
- *    received frame and generate the response (this has been measured experimentally to be around 70 µs). Using an RX to TX delay slightly less than
+ *    received frame and generate the response (this has been measured experimentally to be around 70 ï¿½s). Using an RX to TX delay slightly less than
  *    this minimum turn-around time allows the application to make the communication efficient while reducing power consumption by adjusting the time
  *    spent with the receiver activated.
  * 3. This timeout is for complete reception of a frame, i.e. timeout duration must take into account the length of the expected frame. Here the value

@@ -27,12 +27,12 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "port.h"
+#include "stdio_.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
-#define APPP "SIMPLE RX v1.2"
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -101,7 +101,8 @@ int main(void)
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   setup_DW1000RSTnIRQ(0);
-  stdio_init(&huart2);
+//  stdio_init(&huart2);
+
 
   dw_main();
   /* USER CODE END 2 */

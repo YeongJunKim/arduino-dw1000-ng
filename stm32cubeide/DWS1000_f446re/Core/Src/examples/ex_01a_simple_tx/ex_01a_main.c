@@ -51,7 +51,7 @@ static uint8 tx_msg[] = {0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E', 1, 3};
 /**
  * Application entry point.
  */
-int dw_main(void)
+int dw_main1(void)
 {
     /* Display application name. */
     stdio_write(APP_NAME);
