@@ -83,6 +83,8 @@ volatile uint16_t tx_conf_flag = 0;
 dw_dev device[DW_DEV_MAX];
 dwt_cb_data_t cb_data;
 
+byte uid[8] = {0xFF, 0xFF, 0xFF, 0XFF, 1, 2, 3, 4};
+#define PANID 0x0A
 
 int dw_main(void)
 {
@@ -98,11 +100,17 @@ int dw_main(void)
     }
     port_set_dw1000_fastrate();
 
+    dwt_seteui(uid);
+    dwt_setpanid((uint16_t)PANID);
+
+
     dwt_configure(&config);
     dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb, &rx_to_cb, &rx_err_cb);
     dwt_setinterrupt(DWT_INT_TFRS | DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RXPTO | DWT_INT_RPHE | DWT_INT_RFCE | DWT_INT_RFSL | DWT_INT_SFDT, 1);
     dwt_setrxaftertxdelay(TX_TO_RX_DELAY_UUS);
 //    dwt_setrxtimeout(RX_RESP_TO_UUS);
+    dwt_setrxantennadelay(RX_ANT_DLY);
+    dwt_settxantennadelay(TX_ANT_DLY);
 
 
    	dwt_rxenable(DWT_START_RX_IMMEDIATE);
@@ -125,11 +133,16 @@ int dw_main(void)
 
         if(rx_ok_flag)
         {
-        	rng_machine_dev(rx_buffer, cb_data.datalength);
+        	rng_machine_dev(rx_buffer, cb_data.datalength, 0);
 
            	dwt_rxenable(DWT_START_RX_IMMEDIATE);
         	rx_ok_flag = 0;
         }
+        else
+        {
+        	rng_machine_dev(NULL, 0, 1);
+        }
+
         if(tx_conf_flag)
         {
         	extern uint8_t sendData[LEN_DATA];

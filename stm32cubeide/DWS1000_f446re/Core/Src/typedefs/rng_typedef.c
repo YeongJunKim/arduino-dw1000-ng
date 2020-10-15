@@ -21,8 +21,10 @@
 
 
 #define LOCAL_ADDRESS 0x1234
+#define ROLE ROLE_AS_AHCHOR
 
 float DISTANCE_OF_RADIO     = 0.0046917639786159f;
+float TIME_RES_INV = 63897.6f;
 
 uint8_t sendData[LEN_DATA] = {0,};
 
@@ -74,7 +76,6 @@ boolean rng_init_dev(uint16_t index)
 	{
 		rng_dev[index].data[i] = 0x00;
 	}
-	rng_dev[index].expectedMsgId 		= POLL;
 	rng_dev[index].protocolFailed 		= 0;
 	rng_dev[index].receivedAck 			= 0;
 	rng_dev[index].sentAck 				= 0;
@@ -92,6 +93,7 @@ boolean rng_init_dev(uint16_t index)
 	rng_dev[index].lastActivity 		= 0;
 	rng_dev[index].nowActivity			= 0;
 	rng_dev[index].ActivityResetPeriod  = 600; //100ms
+
 
 	return 1;
 }
@@ -117,8 +119,31 @@ void rng_machine_sent_dev(uint8_t *data, uint16_t length)
 
 
 }
-void rng_machine_dev(uint8_t *data, uint16_t length)
+void rng_machine_dev(uint8_t *data, uint16_t length, uint8_t temp)
 {
+	// check activity
+	for(int i = 0; i < DW_DEV_MAX; i++)
+	{
+		uint32_t nTick = HAL_GetTick();
+		if(rng_dev[i].id != 0x0000){
+			if(nTick - rng_dev[i].lastActivity > rng_dev[i].ActivityResetPeriod)
+			{
+				if(ROLE == ROLE_AS_TAG)
+				{
+					transmitPoll(rng_dev[i].id);
+				}
+				RNG_DEBUG("ACTIVITY FAILED, RESART DEV[%d] \r\n", i);
+				rng_init_dev(i);
+			}
+		}
+	}
+
+
+	if(temp == 1)
+		return;
+
+
+
 	uint16_t id = 0x0000;
 	uint16_t targetid = 0x0000;
 
@@ -151,18 +176,7 @@ void rng_machine_dev(uint8_t *data, uint16_t length)
 	}
 
 
-	// check activity
-	for(int i = 0; i < DW_DEV_MAX; i++)
-	{
-		uint32_t nTick = HAL_GetTick();
-		if(rng_dev[i].id != 0x0000){
-			if(nTick - rng_dev[i].lastActivity > rng_dev[i].ActivityResetPeriod)
-			{
-				RNG_DEBUG("ACTIVITY FAILED, RESART DEV \r\n");
-				rng_init_dev(i);
-			}
-		}
-	}
+
 
 
 
@@ -183,7 +197,7 @@ void rng_machine_dev(uint8_t *data, uint16_t length)
 		switch(rng_dev[index].data[0])
 		{
 		case POLL:
-			RNG_DEBUG("POLL MESSAGE INCOME \r\n");
+			RNG_DEBUG("[ANCHOR] POLL MESSAGE INCOME \r\n");
 			rng_dev[index].protocolFailed = 0;
 			rng_dev[index].timePollReceived = get_rx_timestamp_u64();
 			rng_dev[index].expectedMsgId = RANGE;
@@ -191,13 +205,18 @@ void rng_machine_dev(uint8_t *data, uint16_t length)
 
 			break;
 		case POLL_ACK:
-			RNG_DEBUG("POLL_ACK MESSAGE INCOME \r\n");
+			RNG_DEBUG("[TAG] POLL_ACK MESSAGE INCOME \r\n");
+			rng_dev[index].timePollSent = get_tx_timestamp_u64();
+			rng_dev[index].timePollAckReceived = get_rx_timestamp_u64();
+			rng_dev[index].expectedMsgId = RANGE_REPORT;
+			transmitRange(id);
 
 			break;
 		case RANGE:
-			RNG_DEBUG("RANGE MESSAGE INCOME \r\n");
+			RNG_DEBUG("[ANCHOR] RANGE MESSAGE INCOME \r\n");
 			rng_dev[index].timeRangeReceived = get_rx_timestamp_u64();
 			rng_dev[index].expectedMsgId = POLL;
+
 			if(rng_dev[index].protocolFailed == 0) {
 				RNG_DEBUG("PROTOCOL OK \r\n");
 				rng_dev[index].timePollSent 		= bytesAsValue(rng_dev[index].data + 1, 5);
@@ -211,18 +230,22 @@ void rng_machine_dev(uint8_t *data, uint16_t length)
 											rng_dev[index].timeRangeSent,
 											rng_dev[index].timeRangeReceived);
 			RNG_DEBUG("distance = %f \r\n",distance);
+
+			transmitRangeReport(distance, id);
 			}
 			else {
+				RNG_DEBUG("[ANCHOR] PROTOCOL FAILED \r\n");
 				transmitRangeFailed(id);
 			}
 
 			break;
 		case RANGE_REPORT:
-			RNG_DEBUG("RANGE_REPORT MESSAGE INCOME \r\n");
-
+			RNG_DEBUG("[TAG] RANGE_REPORT MESSAGE INCOME \r\n");
+			transmitPoll(id);
 			break;
 		case RANGE_FAILED:
-
+			RNG_DEBUG("[TAG] RANGE_FAILED MESSAGE INCOME \r\n");
+				transmitPoll(id);
 			break;
 		}
 		rng_dev[index].lastActivity = HAL_GetTick();
@@ -241,7 +264,53 @@ void rng_machine_dev(uint8_t *data, uint16_t length)
 	}
 }
 
+void transmitPoll(uint16_t targetid) {
+	sendData[0] = 0;
+    sendData[16] = LOCAL_ADDRESS & 0xFF;
+    sendData[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
+	sendData[18] = targetid & 0xFF;
+	sendData[19] = (targetid >> 8) & 0xFF;
+	dwt_writetxdata(sizeof(sendData), sendData, 0);
+	dwt_writetxfctrl(sizeof(sendData), 0, 0);
+	dwt_starttx(DWT_START_TX_DELAYED);
 
+}
+void transmitRange(uint16_t targetid) {
+	sendData[0] = RANGE;
+
+//    /* Calculation of future time */
+
+    int index = rng_check_dev(targetid);
+
+
+    rng_dev[index].timeRangeSent = get_sys_timestamp_u64();
+    rng_dev[index].timeRangeSent = microsecondsToUWBTime(3000);
+    dwt_setdelayedtrxtime(rng_dev[index].timeRangeSent);
+    rng_dev[index].timeRangeSent += TX_ANT_DLY;
+
+    writeValueToBytes(sendData+1, rng_dev[index].timePollSent, 5);
+    writeValueToBytes(sendData + 6, rng_dev[index].timePollAckReceived, 5);
+    writeValueToBytes(sendData+11, rng_dev[index].timeRangeSent, 5);
+
+    sendData[16] = LOCAL_ADDRESS & 0xFF;
+    sendData[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
+	sendData[18] = targetid & 0xFF;
+	sendData[19] = (targetid >> 8) & 0xFF;
+
+	dwt_writetxdata(sizeof(sendData), sendData, 0);
+	dwt_writetxfctrl(sizeof(sendData), 0, 0);
+	dwt_starttx(DWT_START_TX_DELAYED);
+}
+
+void transmitRangeReport(float curRange, uint16_t targetid) {
+	sendData[0] = RANGE_REPORT;
+    // write final ranging result
+
+    sendData[16] = LOCAL_ADDRESS & 0xFF;
+    sendData[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
+	sendData[18] = targetid & 0xFF;
+	sendData[19] = (targetid >> 8) & 0xFF;
+}
 
 void transmitRangeFailed(uint16_t targetid) {
 	sendData[0] = RANGE_FAILED;
@@ -255,6 +324,7 @@ void transmitRangeFailed(uint16_t targetid) {
 	dwt_writetxfctrl(sizeof(sendData), 0, 0);
 	dwt_starttx(DWT_START_TX_IMMEDIATE);
 }
+
 void transmitPollAck(uint16_t targetid)
 {
 	sendData[0] = POLL_ACK;
@@ -269,6 +339,23 @@ void transmitPollAck(uint16_t targetid)
 }
 
 
+uint64_t microsecondsToUWBTime(uint64_t microSeconds)
+{
+	return (uint64_t)(microSeconds * TIME_RES_INV);
+}
+
+static uint64 get_sys_timestamp_u64(void){
+	uint8_t ts_tab[5];
+	uint64_t ts = 0;
+	int i;
+	dwt_readsystime(ts_tab);
+	for (i = 4; i >=0; i--)
+	{
+		ts <<= 8;
+		ts |= ts_tab[i];
+	}
+	return ts;
+}
 static uint64 get_tx_timestamp_u64(void)
 {
     uint8 ts_tab[5];
@@ -296,9 +383,14 @@ static uint64 get_rx_timestamp_u64(void)
     return ts;
 }
 
+void writeValueToBytes(byte data[], uint64_t val, uint8_t n) {
+	for(int i = 0; i < n; i++) {
+		data[i] = ((val >> (i*8)) & 0xFF);
+	}
+}
 uint64_t bytesAsValue(byte data[], uint8_t n) {
 		uint64_t value = 0;
-		for(auto i = 0; i < n; i++) {
+		for(int i = 0; i < n; i++) {
 			value |= ((uint64_t)data[i] << (i*8));
 		}
 		return value;
