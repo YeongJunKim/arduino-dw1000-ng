@@ -29,6 +29,8 @@ float TIME_RES_INV = 63897.6f;
 uint8_t sendData[LEN_DATA] = {0,};
 
 
+uint32_t nowCheckTick = 0;
+uint32_t pastCheckTick = 0;
 
 int rng_check_dev(uint16_t id)
 {
@@ -119,19 +121,28 @@ void rng_machine_sent_dev(uint8_t *data, uint16_t length)
 
 
 }
+
+
 void rng_machine_dev(uint8_t *data, uint16_t length, uint8_t temp)
 {
 	// check activity
+	if(length != 0)
+	{
+		RNG_DEBUG("rxdata[%d]", length);
+		for(int i = 0; i < length; i++)
+		{
+			RNG_DEBUG("%02X, ", data[i]);
+		}
+		RNG_DEBUG("\r\n");
+	}
+
+
 	for(int i = 0; i < DW_DEV_MAX; i++)
 	{
 		uint32_t nTick = HAL_GetTick();
 		if(rng_dev[i].id != 0x0000){
 			if(nTick - rng_dev[i].lastActivity > rng_dev[i].ActivityResetPeriod)
 			{
-				if(ROLE == ROLE_AS_TAG)
-				{
-					transmitPoll(rng_dev[i].id);
-				}
 				RNG_DEBUG("ACTIVITY FAILED, RESART DEV[%d] \r\n", i);
 				rng_init_dev(i);
 			}
@@ -140,7 +151,16 @@ void rng_machine_dev(uint8_t *data, uint16_t length, uint8_t temp)
 
 
 	if(temp == 1)
+	{
+		nowCheckTick = HAL_GetTick();
+		if(nowCheckTick - pastCheckTick > 1000)
+		{
+			printf("There is no data in the air\r\n");
+			pastCheckTick = nowCheckTick;
+		}
 		return;
+	}
+	pastCheckTick = nowCheckTick;
 
 
 
@@ -157,14 +177,17 @@ void rng_machine_dev(uint8_t *data, uint16_t length, uint8_t temp)
 	targetid |= (data[19]<<8);
 
 	if(targetid != LOCAL_ADDRESS) {
-		RNG_DEBUG("It is not correct address");
-		return;
+		if(targetid == 0xFF)
+		{
+			RNG_DEBUG("It is Broadcasting message \r\n");
+		}
+		else
+		{
+			RNG_DEBUG("It is not correct address\r\n");
+			return 0;
+		}
 	}
 
-	if(targetid == 0xFF)
-	{
-
-	}
 
 
 	RNG_DEBUG("INCOMMING ID %04X \r\n", id);

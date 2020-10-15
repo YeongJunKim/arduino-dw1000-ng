@@ -34,7 +34,7 @@ extern "C" {
 	typedef uint8_t byte;
 #endif
 
-#define LEN_DATA 127
+#define LEN_DATA 26
 #define DW_DEV_MAX 5
 
 #define ROLE_AS_AHCHOR 0
