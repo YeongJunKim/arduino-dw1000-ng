@@ -45,6 +45,7 @@ extern "C" {
 #define RX_ANT_DLY 16505
 
 
+#define FRAME_LEN_MAX 127
 typedef struct _dw_dev
 {
 	uint16_t id;

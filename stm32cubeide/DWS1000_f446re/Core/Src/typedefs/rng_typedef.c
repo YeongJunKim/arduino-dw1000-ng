@@ -125,8 +125,48 @@ void rng_machine_sent_dev(uint8_t *data, uint16_t length)
 
 void rng_machine_dev(uint8_t *data, uint16_t length, uint8_t temp)
 {
+	uint16_t id = 0x0000;
+	uint16_t targetid = 0x0000;
+	int index = 0;
+	extern volatile uint16_t rx_ok_flag;
+	extern volatile uint16_t rx_to_flag;
+	extern volatile uint16_t rx_err_flag;
+	extern volatile uint16_t tx_conf_flag;
+
+
+
 	// check activity
-	if(length != 0)
+	if(rx_ok_flag == 0 && tx_conf_flag == 0)
+	{
+		for(int i = 0; i < DW_DEV_MAX; i++)
+		{
+			uint32_t nTick = HAL_GetTick();
+			if(rng_dev[i].id != 0x0000){
+				if(nTick - rng_dev[i].lastActivity > rng_dev[i].ActivityResetPeriod)
+				{
+//					RNG_DEBUG("ACTIVITY FAILED, RESART DEV[%d] \r\n", i);
+
+					rng_init_dev(i);
+				}
+			}
+		}
+	}
+
+	if(tx_conf_flag == 1)
+	{
+		RNG_DEBUG("TX COMPLETE \r\n");
+		if(ROLE == ROLE_AS_AHCHOR)
+		{
+
+		}
+		else if(ROLE == ROLE_AS_TAG)
+		{
+
+		}
+		tx_conf_flag = 0;
+	}
+
+	if(rx_ok_flag == 1)
 	{
 		RNG_DEBUG("rxdata[%d]", length);
 		for(int i = 0; i < length; i++)
@@ -134,157 +174,114 @@ void rng_machine_dev(uint8_t *data, uint16_t length, uint8_t temp)
 			RNG_DEBUG("%02X, ", data[i]);
 		}
 		RNG_DEBUG("\r\n");
+       	id = data[16];
+       		id |= (data[17]<<8);
+       		targetid = data[18];
+       		targetid |= (data[19]<<8);
+
+       		if(targetid != LOCAL_ADDRESS) {
+       			if(targetid == 0xFFFF)
+       			{
+       				RNG_DEBUG("INCOMMING ID %04X \r\n", id);
+       				RNG_DEBUG("It is Broadcasting Poll message \r\n");
+       			}
+       			else
+       			{
+       				RNG_DEBUG("It is not correct address\r\n");
+       			}
+       		}
+
+
+       		index = rng_check_dev(id);
+       		if(index != -1)
+       		{
+       			//TODO there is exist data of specific id.
+       			for(int i = 0; i <length; i++) {
+       				rng_dev[index].data[i] = data[i];
+       			}
+       			if(rng_dev[index].data[0] != rng_dev[index].expectedMsgId)
+       			{
+       				RNG_DEBUG("PROTOCOL FAILED\r\n");
+       				rng_dev[index].protocolFailed = 1;
+       			}
+
+       			switch(rng_dev[index].data[0])
+       			{
+       			case POLL:
+       				RNG_DEBUG("[ANCHOR] POLL MESSAGE INCOME \r\n");
+       				rng_dev[index].protocolFailed = 0;
+       				rng_dev[index].timePollReceived = get_rx_timestamp_u64();
+       				rng_dev[index].expectedMsgId = RANGE;
+       				transmitPollAck(id);
+
+       				break;
+       			case POLL_ACK:
+       				RNG_DEBUG("[TAG] POLL_ACK MESSAGE INCOME \r\n");
+       				rng_dev[index].timePollSent = get_tx_timestamp_u64();
+       				rng_dev[index].timePollAckReceived = get_rx_timestamp_u64();
+       				rng_dev[index].expectedMsgId = RANGE_REPORT;
+       				transmitRange(id);
+
+       				break;
+       			case RANGE:
+       				RNG_DEBUG("[ANCHOR] RANGE MESSAGE INCOME \r\n");
+       				rng_dev[index].timeRangeReceived = get_rx_timestamp_u64();
+       				rng_dev[index].expectedMsgId = POLL;
+
+       				if(rng_dev[index].protocolFailed == 0) {
+       					RNG_DEBUG("PROTOCOL OK \r\n");
+       					rng_dev[index].timePollSent 		= bytesAsValue(rng_dev[index].data + 1, 5);
+       					rng_dev[index].timePollAckReceived 	= bytesAsValue(rng_dev[index].data + 6, 5);
+       					rng_dev[index].timeRangeSent 		= bytesAsValue(rng_dev[index].data+11, 5);
+
+       					double distance = computeRangeAsymmetric(rng_dev[index].timePollSent,
+       							rng_dev[index].timePollReceived,
+								rng_dev[index].timePollAckSent,
+								rng_dev[index].timePollAckReceived,
+								rng_dev[index].timeRangeSent,
+								rng_dev[index].timeRangeReceived);
+       					RNG_DEBUG("distance = %f \r\n",distance);
+
+       					transmitRangeReport(distance, id);
+       				}
+       				else {
+       					RNG_DEBUG("[ANCHOR] PROTOCOL FAILED \r\n");
+       					transmitRangeFailed(id);
+       				}
+
+       				break;
+       			case RANGE_REPORT:
+       				RNG_DEBUG("[TAG] RANGE_REPORT MESSAGE INCOME \r\n");
+       				transmitPoll(id);
+       				break;
+       			case RANGE_FAILED:
+       				RNG_DEBUG("[TAG] RANGE_FAILED MESSAGE INCOME \r\n");
+       				transmitPoll(id);
+       				break;
+       			}
+       			rng_dev[index].lastActivity = HAL_GetTick();
+       		}
+       		else
+       		{
+       			RNG_DEBUG("There is no ID Information. -> Add process.. \r\n");
+       			index = rng_find_empty_index_dev();
+       			RNG_DEBUG("empty INDEX: %d \r\n", index);
+       			if(index != -1) {
+       				//ADD ID
+       				rng_add_dev(id, index);
+       				rng_init_dev(index);
+       				RNG_DEBUG("ADD SEQUENCE DONE \r\n");
+       			}
+       		}
+       		//clear message
+       		for(int i = 0; i < LEN_DATA; i ++)
+       			data[i] = 0;
+
+           	dwt_rxenable(DWT_START_RX_IMMEDIATE);
+       		rx_ok_flag = 0;
 	}
 
 
-	for(int i = 0; i < DW_DEV_MAX; i++)
-	{
-		uint32_t nTick = HAL_GetTick();
-		if(rng_dev[i].id != 0x0000){
-			if(nTick - rng_dev[i].lastActivity > rng_dev[i].ActivityResetPeriod)
-			{
-				RNG_DEBUG("ACTIVITY FAILED, RESART DEV[%d] \r\n", i);
-				rng_init_dev(i);
-			}
-		}
-	}
-
-
-	if(temp == 1)
-	{
-		nowCheckTick = HAL_GetTick();
-		if(nowCheckTick - pastCheckTick > 1000)
-		{
-			printf("There is no data in the air\r\n");
-			pastCheckTick = nowCheckTick;
-		}
-		return;
-	}
-	pastCheckTick = nowCheckTick;
-
-
-
-	uint16_t id = 0x0000;
-	uint16_t targetid = 0x0000;
-
-	int index = 0;
-	RNG_DEBUG("MACHINE RUN \r\n");
-
-	id = data[16];
-	id |= (data[17]<<8);
-
-	targetid = data[18];
-	targetid |= (data[19]<<8);
-
-	if(targetid != LOCAL_ADDRESS) {
-		if(targetid == 0xFF)
-		{
-			RNG_DEBUG("It is Broadcasting message \r\n");
-		}
-		else
-		{
-			RNG_DEBUG("It is not correct address\r\n");
-			return 0;
-		}
-	}
-
-
-
-	RNG_DEBUG("INCOMMING ID %04X \r\n", id);
-
-	if(id == 0x0000)
-	{
-		// Do not Consider non ID.
-		return;
-	}
-
-
-
-
-
-
-
-	index = rng_check_dev(id);
-	if(index != -1)
-	{
-		//TODO there is exist data of specific id.
-		RNG_DEBUG("RUN RNG PROCESS \r\n");
-		for(int i = 0; i <length; i++) {
-			rng_dev[index].data[i] = data[i];
-		}
-		if(rng_dev[index].data[0] != rng_dev[index].expectedMsgId)
-		{
-			rng_dev[index].protocolFailed = 1;
-		}
-
-		switch(rng_dev[index].data[0])
-		{
-		case POLL:
-			RNG_DEBUG("[ANCHOR] POLL MESSAGE INCOME \r\n");
-			rng_dev[index].protocolFailed = 0;
-			rng_dev[index].timePollReceived = get_rx_timestamp_u64();
-			rng_dev[index].expectedMsgId = RANGE;
-			transmitPollAck(id);
-
-			break;
-		case POLL_ACK:
-			RNG_DEBUG("[TAG] POLL_ACK MESSAGE INCOME \r\n");
-			rng_dev[index].timePollSent = get_tx_timestamp_u64();
-			rng_dev[index].timePollAckReceived = get_rx_timestamp_u64();
-			rng_dev[index].expectedMsgId = RANGE_REPORT;
-			transmitRange(id);
-
-			break;
-		case RANGE:
-			RNG_DEBUG("[ANCHOR] RANGE MESSAGE INCOME \r\n");
-			rng_dev[index].timeRangeReceived = get_rx_timestamp_u64();
-			rng_dev[index].expectedMsgId = POLL;
-
-			if(rng_dev[index].protocolFailed == 0) {
-				RNG_DEBUG("PROTOCOL OK \r\n");
-				rng_dev[index].timePollSent 		= bytesAsValue(rng_dev[index].data + 1, 5);
-				rng_dev[index].timePollAckReceived 	= bytesAsValue(rng_dev[index].data + 6, 5);
-				rng_dev[index].timeRangeSent 		= bytesAsValue(rng_dev[index].data+11, 5);
-
-			double distance = computeRangeAsymmetric(rng_dev[index].timePollSent,
-											rng_dev[index].timePollReceived,
-											rng_dev[index].timePollAckSent,
-											rng_dev[index].timePollAckReceived,
-											rng_dev[index].timeRangeSent,
-											rng_dev[index].timeRangeReceived);
-			RNG_DEBUG("distance = %f \r\n",distance);
-
-			transmitRangeReport(distance, id);
-			}
-			else {
-				RNG_DEBUG("[ANCHOR] PROTOCOL FAILED \r\n");
-				transmitRangeFailed(id);
-			}
-
-			break;
-		case RANGE_REPORT:
-			RNG_DEBUG("[TAG] RANGE_REPORT MESSAGE INCOME \r\n");
-			transmitPoll(id);
-			break;
-		case RANGE_FAILED:
-			RNG_DEBUG("[TAG] RANGE_FAILED MESSAGE INCOME \r\n");
-				transmitPoll(id);
-			break;
-		}
-		rng_dev[index].lastActivity = HAL_GetTick();
-	}
-	else
-	{
-		RNG_DEBUG("There is no ID Information. -> Add process.. \r\n");
-		index = rng_find_empty_index_dev();
-		RNG_DEBUG("empty INDEX: %d \r\n", index);
-		if(index != -1) {
-			//ADD ID
-			rng_add_dev(id, index);
-			rng_init_dev(index);
-			RNG_DEBUG("ADD SEQUENCE DONE \r\n");
-		}
-	}
 }
 
 void transmitPoll(uint16_t targetid) {
@@ -333,6 +330,10 @@ void transmitRangeReport(float curRange, uint16_t targetid) {
     sendData[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
 	sendData[18] = targetid & 0xFF;
 	sendData[19] = (targetid >> 8) & 0xFF;
+
+	dwt_writetxdata(sizeof(sendData), sendData, 0);
+	dwt_writetxfctrl(sizeof(sendData), 0, 0);
+	dwt_starttx(DWT_START_TX_IMMEDIATE);
 }
 
 void transmitRangeFailed(uint16_t targetid) {
@@ -350,6 +351,7 @@ void transmitRangeFailed(uint16_t targetid) {
 
 void transmitPollAck(uint16_t targetid)
 {
+	RNG_DEBUG("TRANSMIT_POLL_ACK\r\n");
 	sendData[0] = POLL_ACK;
 	sendData[16] = LOCAL_ADDRESS & 0xFF;
 	sendData[17] = (LOCAL_ADDRESS >> 8);

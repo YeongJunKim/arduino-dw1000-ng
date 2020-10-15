@@ -63,8 +63,7 @@ static uint8 tx_msg[] = {0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E', 0x43, 
 volatile static int32 tx_delay_ms = -1;
 
 /* Buffer to store received frame. See NOTE 4 below. */
-#define FRAME_LEN_MAX 127
-static uint8 rx_buffer[FRAME_LEN_MAX];
+uint8_t rx_buffer[FRAME_LEN_MAX];
 
 /* Declaration of static functions. */
 static void rx_ok_cb(const dwt_cb_data_t *cb_data_);
@@ -116,60 +115,26 @@ int dw_main(void)
    	dwt_rxenable(DWT_START_RX_IMMEDIATE);
     while (1)
     {
-        /* Write frame data to DW1000 and prepare transmission. See NOTE 7 below. */
 
-        /* Start transmission, indicating that a response is expected so that reception is enabled immediately after the frame is sent. */
+    	rng_machine_dev(rx_buffer, cb_data.datalength, 0);
 
+//        if(rx_ok_flag)
+//        {
+//        	rng_machine_dev(rx_buffer, cb_data.datalength, 0);
+//
+//           	dwt_rxenable(DWT_START_RX_IMMEDIATE);
+//        	rx_ok_flag = 0;
+//        }
 
-        Sleep(5);
-
-//        if(tx_conf_flag == 0) {
-//            dwt_writetxdata(sizeof(tx_msg), tx_msg, 0); /* Zero offset in TX buffer. */
-//            dwt_writetxfctrl(sizeof(tx_msg), 0, 0);     /* Zero offset in TX buffer, no ranging. */
-//        	dwt_starttx(DWT_START_TX_IMMEDIATE);
-//        	while(tx_conf_flag == 0){};
+//        if(tx_conf_flag)
+//        {
+//        	extern uint8_t sendData[LEN_DATA];
+//        	rng_machine_sent_dev(sendData, LEN_DATA);
 //        	tx_conf_flag = 0;
 //        }
 
-        if(rx_ok_flag)
-        {
-        	rng_machine_dev(rx_buffer, cb_data.datalength, 0);
-
-           	dwt_rxenable(DWT_START_RX_IMMEDIATE);
-        	rx_ok_flag = 0;
-        }
-        else
-        {
-        	rng_machine_dev(NULL, 0, 1);
-        }
-
-        if(tx_conf_flag)
-        {
-        	extern uint8_t sendData[LEN_DATA];
-        	rng_machine_sent_dev(sendData, LEN_DATA);
-        	tx_conf_flag = 0;
-        }
-//
 
 
-//        dwt_rxenable(DWT_START_RX_IMMEDIATE);
-
-        /* Wait for any RX event. */
-//        while (tx_delay_ms == -1)
-//        { };
-
-        /* Execute the defined delay before next transmission. */
-//        if (tx_delay_ms > 0)
-//        {
-//            Sleep(tx_delay_ms);
-//        }
-//        Sleep(5);
-//        printf("flags : %d, %d, %d, %d \r\n",rx_ok_flag,rx_to_flag,rx_err_flag,tx_conf_flag);
-        /* Increment the blink frame sequence number (modulo 256). */
-        tx_msg[BLINK_FRAME_SN_IDX]++;
-
-        /* Reset the TX delay and event signalling mechanism ready to await the next event. */
-        tx_delay_ms = -1;
     }
 }
 
