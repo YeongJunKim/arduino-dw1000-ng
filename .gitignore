@@ -15,4 +15,5 @@ cmake-build-debug
 build/*
 stm32cubeide/.metadata/
 Debug/
+.metadata
 
