@@ -67,10 +67,10 @@ volatile static int32 tx_delay_ms = -1;
 static uint8 rx_buffer[FRAME_LEN_MAX];
 
 /* Declaration of static functions. */
-static void rx_ok_cb(const dwt_cb_data_t *cb_data);
-static void rx_to_cb(const dwt_cb_data_t *cb_data);
-static void rx_err_cb(const dwt_cb_data_t *cb_data);
-static void tx_conf_cb(const dwt_cb_data_t *cb_data);
+static void rx_ok_cb(const dwt_cb_data_t *cb_data_);
+static void rx_to_cb(const dwt_cb_data_t *cb_data_);
+static void rx_err_cb(const dwt_cb_data_t *cb_data_);
+static void tx_conf_cb(const dwt_cb_data_t *cb_data_);
 
 
 
@@ -81,8 +81,7 @@ volatile uint16_t tx_conf_flag = 0;
 
 
 dw_dev device[DW_DEV_MAX];
-
-
+dwt_cb_data_t cb_data;
 
 
 int dw_main(void)
@@ -106,21 +105,35 @@ int dw_main(void)
 //    dwt_setrxtimeout(RX_RESP_TO_UUS);
 
 
+   	dwt_rxenable(DWT_START_RX_IMMEDIATE);
     while (1)
     {
         /* Write frame data to DW1000 and prepare transmission. See NOTE 7 below. */
-        dwt_writetxdata(sizeof(tx_msg), tx_msg, 0); /* Zero offset in TX buffer. */
-        dwt_writetxfctrl(sizeof(tx_msg), 0, 0);     /* Zero offset in TX buffer, no ranging. */
 
         /* Start transmission, indicating that a response is expected so that reception is enabled immediately after the frame is sent. */
 
-       	dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
         Sleep(5);
 
-        if(tx_conf_flag == 0) {
-        	dwt_starttx(DWT_START_TX_IMMEDIATE);
-        	while(tx_conf_flag == 0){};
+//        if(tx_conf_flag == 0) {
+//            dwt_writetxdata(sizeof(tx_msg), tx_msg, 0); /* Zero offset in TX buffer. */
+//            dwt_writetxfctrl(sizeof(tx_msg), 0, 0);     /* Zero offset in TX buffer, no ranging. */
+//        	dwt_starttx(DWT_START_TX_IMMEDIATE);
+//        	while(tx_conf_flag == 0){};
+//        	tx_conf_flag = 0;
+//        }
+
+        if(rx_ok_flag)
+        {
+        	rng_machine_dev(rx_buffer, cb_data.datalength);
+
+           	dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        	rx_ok_flag = 0;
+        }
+        if(tx_conf_flag)
+        {
+        	extern uint8_t sendData[LEN_DATA];
+        	rng_machine_sent_dev(sendData, LEN_DATA);
         	tx_conf_flag = 0;
         }
 //
@@ -137,7 +150,7 @@ int dw_main(void)
 //        {
 //            Sleep(tx_delay_ms);
 //        }
-        Sleep(5);
+//        Sleep(5);
 //        printf("flags : %d, %d, %d, %d \r\n",rx_ok_flag,rx_to_flag,rx_err_flag,tx_conf_flag);
         /* Increment the blink frame sequence number (modulo 256). */
         tx_msg[BLINK_FRAME_SN_IDX]++;
@@ -149,14 +162,11 @@ int dw_main(void)
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn rx_ok_cb()
- *
  * @brief Callback to process RX good frame events
- *
  * @param  cb_data  callback data
- *
  * @return  none
  */
-static void rx_ok_cb(const dwt_cb_data_t *cb_data)
+static void rx_ok_cb(const dwt_cb_data_t *cb_data_)
 {
     int i;
 
@@ -168,19 +178,17 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     }
 
     /* A frame has been received, copy it to our local buffer. */
-    if (cb_data->datalength <= FRAME_LEN_MAX)
+    if (cb_data_->datalength <= FRAME_LEN_MAX)
     {
-        dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
-        stdio_write("Received data : ");
-		for (int i = 0; i < cb_data->datalength; i++)
-		{
-			printf("%02X,", rx_buffer[i]);
-		}
-		stdio_write("\r\n");
+        dwt_readrxdata(rx_buffer, cb_data_->datalength, 0);
+//        stdio_write("Received data : ");
+//		for (int i = 0; i < cb_data_->datalength; i++)
+//		{
+//			printf("%02X,", rx_buffer[i]);
+//		}
+//		stdio_write("\r\n");
     }
-
-    /* Set corresponding inter-frame delay. */
-    tx_delay_ms = DFLT_TX_DELAY_MS;
+    cb_data = *cb_data_;
 
     rx_ok_flag = 1;
     /* TESTING BREAKPOINT LOCATION #1 */
@@ -188,14 +196,11 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn rx_to_cb()
- *
  * @brief Callback to process RX timeout events
- *
  * @param  cb_data  callback data
- *
  * @return  none
  */
-static void rx_to_cb(const dwt_cb_data_t *cb_data)
+static void rx_to_cb(const dwt_cb_data_t *cb_data_)
 {
     /* Set corresponding inter-frame delay. */
     tx_delay_ms = RX_TO_TX_DELAY_MS;
@@ -207,14 +212,11 @@ static void rx_to_cb(const dwt_cb_data_t *cb_data)
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn rx_err_cb()
- *
  * @brief Callback to process RX error events
- *
  * @param  cb_data  callback data
- *
  * @return  none
  */
-static void rx_err_cb(const dwt_cb_data_t *cb_data)
+static void rx_err_cb(const dwt_cb_data_t *cb_data_)
 {
     /* Set corresponding inter-frame delay. */
     tx_delay_ms = RX_ERR_TX_DELAY_MS;
@@ -233,15 +235,21 @@ static void rx_err_cb(const dwt_cb_data_t *cb_data)
  *
  * @return  none
  */
-static void tx_conf_cb(const dwt_cb_data_t *cb_data)
+static void tx_conf_cb(const dwt_cb_data_t *cb_data_)
 {
     /* This callback has been defined so that a breakpoint can be put here to check it is correctly called but there is actually nothing specific to
      * do on transmission confirmation in this example. Typically, we could activate reception for the response here but this is automatically handled
      * by DW1000 using DWT_RESPONSE_EXPECTED parameter when calling dwt_starttx().
      * An actual application that would not need this callback could simply not define it and set the corresponding field to NULL when calling
      * dwt_setcallbacks(). The ISR will not call it which will allow to save some interrupt processing time. */
+//	extern uint8_t sendData[26];
+//
+//	for(int i = 0; i < 26; i ++)
+//	{
+//		printf("%02X,", sendData[i]);
+//	}
 
-    printf("tx done \r\n");
+//    printf("tx done \r\n");
     tx_conf_flag = 1;
     /* TESTING BREAKPOINT LOCATION #4 */
 }
