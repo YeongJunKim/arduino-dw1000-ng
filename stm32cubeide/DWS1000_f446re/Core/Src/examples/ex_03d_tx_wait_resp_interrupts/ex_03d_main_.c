@@ -48,7 +48,7 @@ static uint8 tx_msg[] = {0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E', 0x43, 
 /* Delay from end of transmission to activation of reception, expressed in UWB microseconds (1 uus is 512/499.2 microseconds). See NOTE 2 below. */
 #define TX_TO_RX_DELAY_UUS 60
 /* Receive response timeout, expressed in UWB microseconds. See NOTE 3 below. */
-#define RX_RESP_TO_UUS 5000
+#define RX_RESP_TO_UUS 50000
 /* Default inter-frame delay period, in milliseconds. */
 #define DFLT_TX_DELAY_MS 1000
 /* Inter-frame delay period in case of RX timeout, in milliseconds.
@@ -107,7 +107,7 @@ int dw_main(void)
     dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb, &rx_to_cb, &rx_err_cb);
     dwt_setinterrupt(DWT_INT_TFRS | DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RXPTO | DWT_INT_RPHE | DWT_INT_RFCE | DWT_INT_RFSL | DWT_INT_SFDT, 1);
     dwt_setrxaftertxdelay(TX_TO_RX_DELAY_UUS);
-//    dwt_setrxtimeout(RX_RESP_TO_UUS);
+    dwt_setrxtimeout(RX_RESP_TO_UUS);
     dwt_setrxantennadelay(RX_ANT_DLY);
     dwt_settxantennadelay(TX_ANT_DLY);
 
@@ -115,8 +115,8 @@ int dw_main(void)
    	dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
 
-   	rng_dev[0].id = 0x2222;
-   	rng_dev[0].role = ROLE_AS_AHCHOR;
+   	rng_dev[0].id = 0x1234;
+   	rng_dev[0].role = ROLE_AS_TAG;
    	rng_dev[0].ActivityResetPeriod = 500;
     while (1)
     {

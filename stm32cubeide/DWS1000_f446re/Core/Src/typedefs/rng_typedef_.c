@@ -20,8 +20,7 @@
 #define RANGE_FAILED 255
 
 
-#define LOCAL_ADDRESS 0x1234
-#define ROLE ROLE_AS_AHCHOR
+#define LOCAL_ADDRESS 0x2222
 
 float DISTANCE_OF_RADIO     = 0.0046917639786159f;
 float TIME_RES_INV = 63897.6f;
@@ -149,6 +148,7 @@ void rng_machine_dev(uint8_t *data, uint16_t length, uint8_t temp)
 				if(rng_dev[i].role == ROLE_AS_TAG)
 				{
 					transmitPoll(rng_dev[i].id);
+				   	dwt_rxenable(DWT_START_RX_IMMEDIATE);
 				}
 				else if(rng_dev[i].role == ROLE_AS_AHCHOR)
 				{
@@ -164,14 +164,7 @@ void rng_machine_dev(uint8_t *data, uint16_t length, uint8_t temp)
 	if(tx_conf_flag == 1)
 	{
 		RNG_DEBUG("TX COMPLETE \r\n");
-		if(ROLE == ROLE_AS_AHCHOR)
-		{
 
-		}
-		else if(ROLE == ROLE_AS_TAG)
-		{
-
-		}
 		tx_conf_flag = 0;
 	}
 
@@ -294,6 +287,7 @@ void rng_machine_dev(uint8_t *data, uint16_t length, uint8_t temp)
 }
 
 void transmitPoll(uint16_t targetid) {
+	RNG_DEBUG("transmit poll \r\n");
 	sendData[0] = 0;
     sendData[16] = LOCAL_ADDRESS & 0xFF;
     sendData[17] = (LOCAL_ADDRESS  >> 8)& 0xFF;
@@ -301,7 +295,7 @@ void transmitPoll(uint16_t targetid) {
 	sendData[19] = (targetid >> 8) & 0xFF;
 	dwt_writetxdata(sizeof(sendData), sendData, 0);
 	dwt_writetxfctrl(sizeof(sendData), 0, 0);
-	dwt_starttx(DWT_START_TX_DELAYED);
+	dwt_starttx(DWT_START_TX_IMMEDIATE);
 
 }
 void transmitRange(uint16_t targetid) {
@@ -378,7 +372,7 @@ uint64_t microsecondsToUWBTime(uint64_t microSeconds)
 	return (uint64_t)(microSeconds * TIME_RES_INV);
 }
 
-static uint64 get_sys_timestamp_u64(void){
+uint64 get_sys_timestamp_u64(void){
 	uint8_t ts_tab[5];
 	uint64_t ts = 0;
 	int i;
@@ -390,7 +384,7 @@ static uint64 get_sys_timestamp_u64(void){
 	}
 	return ts;
 }
-static uint64 get_tx_timestamp_u64(void)
+uint64 get_tx_timestamp_u64(void)
 {
     uint8 ts_tab[5];
     uint64 ts = 0;
@@ -403,7 +397,7 @@ static uint64 get_tx_timestamp_u64(void)
     }
     return ts;
 }
-static uint64 get_rx_timestamp_u64(void)
+uint64 get_rx_timestamp_u64(void)
 {
     uint8 ts_tab[5];
     uint64 ts = 0;
@@ -454,3 +448,4 @@ double computeRangeAsymmetric(uint64_t timePollSent,
 
 	return distance;
 }
+//
